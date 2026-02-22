@@ -1,0 +1,117 @@
+{
+  "common": {
+    "credits": "Crédits",
+    "logout": "Déconnexion",
+    "profile": "Profil",
+    "id": "ID",
+    "language": "Langue",
+    "loading": "Chargement...",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "close": "Fermer",
+    "sessions": "Sessions",
+    "total_time": "Temps Total",
+    "best_score": "Meilleur Score"
+  },
+  "sidebar": {
+    "reports": "Rapports",
+    "structure_audit": "Audit Structurel",
+    "plagiarism_scan": "Scan Plagiat",
+    "simulation": "Simulation Soutenance",
+    "text_extractor": "Extracteur Texte",
+    "no_project": "Aucun projet sélectionné",
+    "last_edited": "Dernière édition il y a {{time}}"
+  },
+  "navbar": {
+    "search_placeholder": "Rechercher des rapports...",
+    "new_report": "Nouveau Rapport"
+  },
+  "welcome": {
+    "greeting_morning": "Bonjour",
+    "greeting_afternoon": "Bon après-midi",
+    "greeting_evening": "Bonsoir",
+    "greeting_night": "Bonne nuit",
+    "defense_in": "Soutenance dans",
+    "defense_passed": "Soutenance passée",
+    "days": "jours",
+    "hours": "heures"
+  },
+  "dashboard": {
+    "tabs": {
+      "briefing": "Briefing",
+      "defense": "Arena",
+      "aftermath": "Results"
+    },
+    "no_file": "AUCUN FICHIER DÉTECTÉ.",
+    "upload_sequence": "INITIEZ LA SÉQUENCE DE TÉLÉCHARGEMENT POUR VOIR LES DONNÉES.",
+    "aftermath_empty_title": "Les Résultats",
+    "aftermath_empty_subtitle": "Complétez une simulation de soutenance pour voir vos mesures de performance et vos résultats.",
+    "aftermath_status": "STATUT : AUCUNE DONNÉE DE SIMULATION",
+    "greetings": [
+      "Bon retour",
+      "Salutations",
+      "C'est reparti",
+      "Prêt pour la suite",
+      "La scène est à vous",
+      "Gardez le cap",
+      "Le savoir vous attend"
+    ],
+    "no_report_title": "Aucun Projet Sélectionné",
+    "no_report_subtitle": "Téléchargez ou sélectionnez un rapport pour commencer l'analyse.",
+    "select_report": "Veuillez sélectionner un rapport dans le tableau de bord pour commencer le processus.",
+    "go_to_dashboard": "Aller au tableau de bord"
+  },
+  "stats": {
+    "title": "Données du Fichier",
+    "filename": "Nom du fichier",
+    "page_count": "Nombre de pages",
+    "word_count": "Nombre de mots",
+    "language": "Langue",
+    "uploaded_on": "Téléchargé le",
+    "no_file": "Aucun fichier téléchargé",
+    "pages": "Pages",
+    "words": "Mots"
+  },
+  "reports": {
+    "title": "Mes Rapports",
+    "new_button": "Créer Nouveau Rapport",
+    "empty_state": "Aucun rapport trouvé. Commencez par télécharger votre premier PDF !",
+    "upload_pdf": "Télécharger PDF",
+    "drop_files": "Cliquez pour télécharger ou glissez-déposez",
+    "analyzing": "Analyse de votre rapport...",
+    "view_full": "Voir Détails",
+    "delete_title": "Supprimer Rapport",
+    "delete_confirm": "Êtes-vous sûr de vouloir supprimer ce rapport ? Cette action est irréversible."
+  },
+  "simulation": {
+    "setup": "Configuration Simulation",
+    "setup_subtitle": "Configurez les paramètres de votre simulation de soutenance",
+    "report_language": "Langue du Rapport",
+    "duration": "Durée Soutenance",
+    "difficulty": "Niveau de Difficulté",
+    "initialize": "Initialiser Simulation",
+    "insufficient_credits": "Crédits insuffisants. Vous avez {{credits}} crédits.",
+    "initializing": "Initialisation de la salle de soutenance...",
+    "time_remaining": "Temps Restant",
+    "student_label": "Vous",
+    "jury_title_technical": "L'EXPERT TECHNIQUE",
+    "jury_title_academic": "L'ACADÉMIQUE STRICT",
+    "jury_title_business": "LE STRATÈGE BUSINESS",
+    "end_session": "Terminer Session",
+    "evaluating": "Évaluation..."
+  },
+  "upload": {
+    "title": "Télécharger le Rapport PDF",
+    "drop_here": "Déposez votre PDF ici ou cliquez pour parcourir",
+    "only_pdf": "Fichiers PDF standard uniquement",
+    "analyzing": "Analyse du contenu du PDF...",
+    "uploading_pdf": "Téléchargement du PDF...",
+    "upload_success": "Téléchargement réussi ! ({{pageCount}} pages, {{wordCount}} mots)",
+    "done": "Terminé !",
+    "failed": "Échec du téléchargement. Veuillez réessayer.",
+    "analyzing_subtitle": "Cela peut prendre quelques secondes...",
+    "try_again": "Réessayer"
+  }
+}

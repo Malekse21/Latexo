@@ -1,0 +1,117 @@
+{
+  "common": {
+    "credits": "Credits",
+    "logout": "Logout",
+    "profile": "Profile",
+    "id": "ID",
+    "language": "Language",
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "sessions": "Sessions",
+    "total_time": "Total Time",
+    "best_score": "Best Score"
+  },
+  "sidebar": {
+    "reports": "Reports",
+    "structure_audit": "Structure Audit",
+    "plagiarism_scan": "Plagiarism Scan",
+    "simulation": "Soutenance Simulation",
+    "text_extractor": "Text Extractor",
+    "no_project": "No Project Selected",
+    "last_edited": "Last edited {{time}} ago"
+  },
+  "navbar": {
+    "search_placeholder": "Search reports...",
+    "new_report": "New Report"
+  },
+  "welcome": {
+    "greeting_morning": "Good Morning",
+    "greeting_afternoon": "Good Afternoon",
+    "greeting_evening": "Good Evening",
+    "greeting_night": "Good Night",
+    "defense_in": "Defense in",
+    "defense_passed": "Defense passed",
+    "days": "days",
+    "hours": "hours"
+  },
+  "dashboard": {
+    "tabs": {
+      "briefing": "Briefing",
+      "defense": "Arena",
+      "aftermath": "Results"
+    },
+    "no_file": "NO FILE DETECTED.",
+    "upload_sequence": "INITIATE UPLOAD SEQUENCE TO VIEW DATA.",
+    "aftermath_empty_title": "The Aftermath",
+    "aftermath_empty_subtitle": "Complete a defense simulation to view your performance metrics and results.",
+    "aftermath_status": "STATUS: NO SIMULATION DATA",
+    "greetings": [
+      "Welcome back",
+      "Greetings",
+      "Back at it",
+      "Ready for more",
+      "The stage is yours",
+      "Eyes on the prize",
+      "Knowledge awaits"
+    ],
+    "no_report_title": "No Project Selected",
+    "no_report_subtitle": "Upload or select a report to begin analysis.",
+    "select_report": "Please select a report from the Dashboard to begin the process.",
+    "go_to_dashboard": "Go to Dashboard"
+  },
+  "stats": {
+    "title": "File Data",
+    "filename": "Filename",
+    "page_count": "Page Count",
+    "word_count": "Word Count",
+    "language": "Language",
+    "uploaded_on": "Uploaded On",
+    "no_file": "No file uploaded",
+    "pages": "Pages",
+    "words": "Words"
+  },
+  "reports": {
+    "title": "My Reports",
+    "new_button": "Create New Report",
+    "empty_state": "No reports found. Start by uploading your first PDF!",
+    "upload_pdf": "Upload PDF",
+    "drop_files": "Click to upload or drag and drop",
+    "analyzing": "Analyzing your report...",
+    "view_full": "View Full Details",
+    "delete_title": "Delete Report",
+    "delete_confirm": "Are you sure you want to delete this report? This action cannot be undone."
+  },
+  "simulation": {
+    "setup": "Simulation Setup",
+    "setup_subtitle": "Configure your defense simulation parameters",
+    "report_language": "Report Language",
+    "duration": "Soutenance Duration",
+    "difficulty": "Difficulty Level",
+    "initialize": "Initialize Simulation",
+    "insufficient_credits": "Insufficient credits. You have {{credits}} credits.",
+    "initializing": "Initializing Defense Room...",
+    "time_remaining": "Time Remaining",
+    "student_label": "You",
+    "jury_title_technical": "THE TECHNICAL EXPERT",
+    "jury_title_academic": "THE STRICT ACADEMIC",
+    "jury_title_business": "THE BUSINESS STRATEGIST",
+    "end_session": "End Session Early",
+    "evaluating": "Evaluating..."
+  },
+  "upload": {
+    "title": "Upload PDF Report",
+    "drop_here": "Drop your PDF here or click to browse",
+    "only_pdf": "Standard PDF files only",
+    "analyzing": "Analyzing PDF content...",
+    "uploading_pdf": "Uploading PDF...",
+    "upload_success": "Upload successful! ({{pageCount}} pages, {{wordCount}} words)",
+    "done": "Done!",
+    "failed": "Upload failed. Please try again.",
+    "analyzing_subtitle": "This may take a few seconds...",
+    "try_again": "Try Again"
+  }
+}
