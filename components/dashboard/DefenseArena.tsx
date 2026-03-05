@@ -101,12 +101,12 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [initialData, setInitialData] = useState<any>(null);
   const [evaluationResults, setEvaluationResults] = useState<any>(null);
 
-  // Cycle loading messages
+  // Cycle loading messages — step 0=intro, 1/2/3=jury members, 4=ready to transition
   useEffect(() => {
     if (phase === "loading") {
       const interval = setInterval(() => {
         setLoadingStep((prev) => {
-          if (prev >= 3) {
+          if (prev >= 4) {
             clearInterval(interval);
             return prev;
           }
@@ -156,9 +156,9 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     }
   }, [initialLanguage]);
 
-  // Transition to Arena when ready
+  // Transition to Arena when ready (step 4 = all jury shown, safe to proceed)
   useEffect(() => {
-    if (phase === "loading" && loadingStep === 3 && initialData) {
+    if (phase === "loading" && loadingStep === 4 && initialData) {
       const { firstJuryMessage } = initialData;
 
       // Start Arena
@@ -610,7 +610,48 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               <h2 className="text-2xl font-bold mb-1 font-mono uppercase tracking-wider">
                 {t('simulation.setup')}
               </h2>
-              <p className="text-gray-600 text-sm mb-6">{t('simulation.setup_subtitle')}</p>
+              <p className="text-gray-600 text-sm mb-4">{t('simulation.setup_subtitle')}</p>
+
+              {/* Chrome & Mic Warning */}
+              <div className="border border-black p-4 mb-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Chrome PNG */}
+                    <img src="/images/chrome.png" alt="Chrome" className="w-8 h-8 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-widest">Recommended: Google Chrome</p>
+                      <p className="text-[11px] text-gray-500">Speech recognition is most reliable on Chrome. Other browsers may have limited support.</p>
+                    </div>
+                  </div>
+                  {/* Warning Icon (no text) */}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 shrink-0 text-black">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                </div>
+                <div className="border-t border-gray-200 pt-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest">Microphone Check</p>
+                    <p className="text-[11px] text-gray-500">Ensure your mic is connected and permissions are granted before starting.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 border border-black px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors"
+                    onClick={async () => {
+                      try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        stream.getTracks().forEach(t => t.stop());
+                        alert('✅ Microphone is working!');
+                      } catch {
+                        alert('❌ Microphone access denied or not available. Check browser settings.');
+                      }
+                    }}
+                  >
+                    Test Mic
+                  </button>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Left Column */}
