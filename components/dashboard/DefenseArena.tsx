@@ -1,17 +1,55 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/lib/context/user-context";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle, X, Shield, Swords, Flame, Mic, Square, ArrowRight } from "lucide-react";
 
 import { TalkingAvatar } from "@/components/dashboard/TalkingAvatar";
 import { VoiceWaveform } from "@/components/dashboard/VoiceWaveform";
-import { StressMeter } from "@/components/dashboard/StressMeter";
 import { MicrophoneButton } from "@/components/dashboard/MicrophoneButton";
 import { AudioRecorder, playAudioBase64, transcribeAudio } from "@/lib/voice/audioRecorder";
+
+// Helper: play a simple synthesized beep or click
+const playSoundEffect = (type: 'pop' | 'click' | 'chime') => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    if (type === 'pop') {
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.1);
+    } else if (type === 'click') {
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.05);
+    } else if (type === 'chime') {
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+      oscillator.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.5);
+    }
+  } catch (e) {
+    console.error("Audio Context not supported or failed", e);
+  }
+};
 
 type SimulationPhase = "config" | "loading" | "arena" | "closing" | "aftermath";
 type Language = "french" | "english" | "mixed";
@@ -32,9 +70,16 @@ interface SimulationConfig {
 
 const LOADING_MESSAGES = [
   "Reading 80 pages of research...",
-  "Indexing technical stack (RAG)...",
+  "Indexing technical stack...",
   "Briefing the Jury members...",
   "Identifying 4 methodological vulnerabilities...",
+];
+
+const DELIBERATION_MESSAGES = [
+  "Analyzing technical responses...",
+  "Reviewing methodology & structure...",
+  "Assessing business viability...",
+  "Calculating final grade...",
 ];
 
 const DIFFICULTY_CARDS = [
@@ -42,24 +87,36 @@ const DIFFICULTY_CARDS = [
     id: "gentle" as Difficulty,
     title: "Gentle",
     description: "Supportive, focuses on clarity",
+    icon: Shield,
+    color: "text-blue-500",
+    bgAccent: "bg-blue-50",
+    borderHover: "hover:border-blue-500"
   },
   {
     id: "standard" as Difficulty,
     title: "Standard",
     description: "Professional, realistic academic standards",
+    icon: Swords,
+    color: "text-gray-700",
+    bgAccent: "bg-gray-50",
+    borderHover: "hover:border-black"
   },
   {
     id: "hostile" as Difficulty,
-    title: "Hostile (Grilleur)",
+    title: "Hostile",
     description: "Aggressive, looks for contradictions",
+    icon: Flame,
+    color: "text-red-500",
+    bgAccent: "bg-red-50",
+    borderHover: "hover:border-red-500"
   },
 ];
 
 // Distinct voice profiles for each jury member
 const VOICE_PROFILES: Record<string, { pitch: number; rate: number }> = {
   technical: { pitch: 0.85, rate: 0.9 },   // Malek — deep, deliberate
-  academic: { pitch: 1.15, rate: 1.0 },     // Souad — higher, measured
-  business: { pitch: 1.0, rate: 1.05 },     // Amir — mid-range, energetic
+  academic: { pitch: 1.4, rate: 1.1 },     // Souad — high-pitch female, faster, clear
+  business: { pitch: 1.0, rate: 1.05 },    // Amir — mid-range, energetic
 };
 
 interface DefenseArenaProps {
@@ -86,13 +143,18 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState<ActiveSpeaker>(null);
-  const [stressLevel, setStressLevel] = useState(0);
   const [transcript, setTranscript] = useState(t('common.loading'));
   
   // Transcript tracking for evaluation
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const messagesRef = useRef<TranscriptMessage[]>([]);
   const [sessionStartTime, setSessionStartTime] = useState(0);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  // Keep messagesRef always in sync with messages state (avoids stale closures)
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   
   // Voice state (Native Browser APIs)
   const [isAISpeaking, setIsAISpeaking] = useState(false);
@@ -100,6 +162,73 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [recognition, setRecognition] = useState<any>(null);
   const [initialData, setInitialData] = useState<any>(null);
   const [evaluationResults, setEvaluationResults] = useState<any>(null);
+
+  // Loading phase enhancements
+  const [loadingTickerIndex, setLoadingTickerIndex] = useState(0);
+  const [reportName, setReportName] = useState<string | null>(null);
+  // Closing phase enhancements
+  const [deliberationStep, setDeliberationStep] = useState(0);
+  
+  // Config phase enhancements
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isChrome, setIsChrome] = useState(true);
+  const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Full state reset — returns everything to initial values so user can start a new simulation without reloading
+  const resetSimulation = () => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (recognition) recognition.stop();
+    setPhase("config");
+    setMessages([]);
+    setTranscript(t('common.loading'));
+    setLiveCaption('');
+    setTimeRemaining(0);
+    setIsRecording(false);
+    setIsProcessing(false);
+    setIsProcessingAudio(false);
+    setIsAISpeaking(false);
+    setIsEvaluating(false);
+    setActiveSpeaker(null);
+    setSessionStartTime(0);
+    setInitialData(null);
+    setEvaluationResults(null);
+    setLoadingStep(0);
+    setLoadingTickerIndex(0);
+    setReportName(null);
+    setDeliberationStep(0);
+    setShowConfirmModal(false);
+    setShowEndConfirmModal(false);
+    setIsPaused(false);
+  };
+
+  // Detect browser on mount
+  useEffect(() => {
+    const isChromium = !!(window as any).chrome;
+    const isEdge = navigator.userAgent.indexOf("Edg") !== -1;
+    setIsChrome(isChromium && !isEdge);
+  }, []);
+
+  // Handle Keyboard Spacebar for Mic Toggle
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input or textarea
+      if (
+        e.code === "Space" &&
+        phase === "arena" &&
+        !isProcessingAudio &&
+        !isAISpeaking &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault(); // Prevent page scroll
+        handleMicClick();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [phase, isRecording, isProcessingAudio, isAISpeaking, recognition, messages]);
 
   // Cycle loading messages — step 0=intro, 1/2/3=jury members, 4=ready to transition
   useEffect(() => {
@@ -119,32 +248,87 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     }
   }, [phase]);
 
-  // Countdown timer for arena
+  // Cycle loading ticker messages
   useEffect(() => {
-    if (phase === "arena" && timeRemaining > 0) {
+    if (phase === "loading") {
+      setLoadingTickerIndex(0);
+      const interval = setInterval(() => {
+        setLoadingTickerIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [phase]);
+
+  // Fetch report name for personalized loading
+  useEffect(() => {
+    if (phase === "loading" && (reportId || profile?.active_report_id)) {
+      const fetchName = async () => {
+        try {
+          const supabase = createClient();
+          const { data } = await supabase
+            .from('reports')
+            .select('name')
+            .eq('id', reportId || profile?.active_report_id)
+            .single();
+          if (data?.name) setReportName(data.name);
+        } catch {}
+      };
+      fetchName();
+    }
+  }, [phase, reportId, profile?.active_report_id]);
+
+  // Cycle deliberation messages during closing/evaluating
+  useEffect(() => {
+    if (phase === "closing" && isEvaluating) {
+      setDeliberationStep(0);
+      const interval = setInterval(() => {
+        setDeliberationStep((prev) =>
+          prev < DELIBERATION_MESSAGES.length - 1 ? prev + 1 : prev
+        );
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [phase, isEvaluating]);
+
+  // Countdown timer for arena (pauses when tab is hidden)
+  useEffect(() => {
+    if (phase === "arena" && timeRemaining > 0 && !isPaused) {
       const interval = setInterval(() => {
         setTimeRemaining((prev) => {
           if (prev <= 1) {
-            // Timer ended — go to closing phase, not direct evaluation
-            handleClosingPhase();
-            return 0;
+            return 0; // Just set to 0, handle phase change below
           }
           return prev - 1;
         });
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [phase, timeRemaining]);
+  }, [phase, timeRemaining, isPaused]);
 
-  // Stress level increment effect
+  // Handle timer reaching zero (separate effect to avoid stale closures)
   useEffect(() => {
-    if (phase === "arena" && stressLevel < 100) {
-      const interval = setInterval(() => {
-        setStressLevel((prev) => Math.min(prev + 1, 100));
-      }, 3000); // Increase by 1% every 3 seconds
-      return () => clearInterval(interval);
+    if (phase === "arena" && timeRemaining === 0) {
+      handleClosingPhase();
     }
-  }, [phase, stressLevel]);
+  }, [timeRemaining, phase]);
+
+  // Tab visibility: pause simulation when user switches tabs or minimizes
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden — pause
+        setIsPaused(true);
+        if (window.speechSynthesis) window.speechSynthesis.pause();
+      } else {
+        // Tab is visible again — resume
+        setIsPaused(false);
+        if (window.speechSynthesis) window.speechSynthesis.resume();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Sync config language when initialLanguage prop changes
   useEffect(() => {
@@ -303,11 +487,73 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   };
 
   // Helper: speak text with jury-specific voice profile
+  // Each juror gets a truly DISTINCT voice + language matching
   const speakWithProfile = (text: string, speaker: string, onDone?: () => void) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
+      
+      const isFrench = config.language === 'french';
+      utterance.lang = isFrench ? 'fr-FR' : 'en-US';
+
+      // Load available voices
+      const voices = window.speechSynthesis.getVoices();
+      
+      if (voices.length > 0) {
+        // Filter voices that match the selected language
+        const langMatched = voices.filter(v => 
+          v.lang.startsWith(isFrench ? 'fr' : 'en')
+        );
+        const pool = langMatched.length > 0 ? langMatched : voices;
+
+        // Keywords to find female voices (for Souad)
+        const femaleKeywords = ['female', 'woman', 'zira', 'fiona', 'hazel', 'susan', 'amélie', 'hortense', 'denise', 'virginie', 'marie', 'céline', 'caroline', 'google uk english female', 'samantha', 'karen', 'moira', 'tessa', 'victoria', 'sara'];
+        // Keywords to find male voices
+        const maleKeywords = ['male', 'man', 'david', 'mark', 'paul', 'thomas', 'daniel', 'james', 'george', 'google uk english male', 'alex', 'fred', 'tom', 'jacques', 'henri', 'nicolas', 'philippe'];
+        
+        const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
+          for (const kw of keywords) {
+            const match = pool.find(v => 
+              v.name.toLowerCase().includes(kw) && v !== exclude
+            );
+            if (match) return match;
+          }
+          return null;
+        };
+
+        let selectedVoice: SpeechSynthesisVoice | null = null;
+
+        if (speaker === "academic") {
+          // Souad: female voice
+          selectedVoice = findVoice(femaleKeywords);
+          if (!selectedVoice) {
+            // fallback: pick the last voice in pool (often different from default)
+            selectedVoice = pool[pool.length - 1];
+          }
+        } else if (speaker === "technical") {
+          // Malek: first male voice found
+          selectedVoice = findVoice(maleKeywords);
+          if (!selectedVoice) {
+            selectedVoice = pool[0]; // first available
+          }
+        } else if (speaker === "business") {
+          // Amir: second distinct male voice, different from Malek's
+          const malekVoice = findVoice(maleKeywords);
+          selectedVoice = findVoice(maleKeywords, malekVoice);
+          if (!selectedVoice && pool.length > 1) {
+            // Just pick a different voice from pool
+            selectedVoice = pool[1] !== malekVoice ? pool[1] : pool[Math.min(2, pool.length - 1)];
+          }
+          if (!selectedVoice) {
+            selectedVoice = pool[0];
+          }
+        }
+
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+        }
+      }
+
       const profile = VOICE_PROFILES[speaker] || { pitch: 1.0, rate: 1.0 };
       utterance.pitch = profile.pitch;
       utterance.rate = profile.rate;
@@ -326,7 +572,30 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     }
   };
 
-  // Closing phase: AI generates a farewell remark, speaks it, then evaluates
+  // Helper: play a simple synthesized beep for closing
+  const playBeep = (frequency: number = 440, durationMs: number = 150) => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+      
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + durationMs / 1000);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      oscillator.start();
+      setTimeout(() => oscillator.stop(), durationMs);
+    } catch (e) {
+      console.error("Audio Context not supported or failed", e);
+    }
+  };
+
+  // Closing phase: Static farewell remark, plays sounds, then evaluates
   const handleClosingPhase = async () => {
     // Stop any recording
     if (recognition) recognition.stop();
@@ -335,29 +604,18 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     setActiveSpeaker(null);
 
     setPhase("closing");
+    setTranscript(''); // Clear stale transcript so old text doesn't show in closing view
 
-    try {
-      // Get AI-generated closing remark
-      const response = await fetch('/api/simulation/closing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          language: config.language,
-          conversation_history: messages.slice(-6),
-          report_id: reportId || profile?.active_report_id,
-        }),
-      });
+    // Play an alert chime (two quick notes) to signify the end of the simulation
+    playBeep(660, 150);
+    setTimeout(() => playBeep(880, 200), 200);
 
-      let closingText = config.language === 'french'
-        ? "Merci pour votre présentation. Le jury va maintenant délibérer."
-        : "Thank you for your defense. The jury will now deliberate.";
-      let closingSpeaker = "academic";
-
-      if (response.ok) {
-        const data = await response.json();
-        closingText = data.text || closingText;
-        closingSpeaker = data.speaker || closingSpeaker;
-      }
+    // Give it a brief half-second pause before speaking
+    setTimeout(() => {
+      const closingText = config.language === 'french'
+        ? "Le temps est écoulé. Merci pour votre présentation, le jury va maintenant délibérer."
+        : "Time is up. Thank you for your defense, the jury will now deliberate.";
+      const closingSpeaker = "academic";
 
       // Display and speak the closing remark
       setActiveSpeaker(closingSpeaker as ActiveSpeaker);
@@ -367,14 +625,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       speakWithProfile(closingText, closingSpeaker, () => {
         setIsAISpeaking(false);
         setActiveSpeaker(null);
-        // After speaking, auto-proceed to evaluation
-        runEvaluation();
+        
+        // Final sign-off chime before evaluation screen
+        playBeep(440, 300);
+        
+        // Auto-proceed to evaluation
+        setTimeout(() => runEvaluation(), 500);
       });
-    } catch (error) {
-      console.error('Closing remarks failed:', error);
-      // Skip closing and go straight to evaluation
-      runEvaluation();
-    }
+    }, 600);
   };
 
   // Run the evaluation (called after closing remarks)
@@ -385,7 +643,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transcript: messages,
+          transcript: messagesRef.current,
           report_id: reportId || profile?.active_report_id,
           config: {
             difficulty: config.difficulty,
@@ -410,39 +668,56 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       setPhase("aftermath");
     } catch (error) {
       console.error("Failed to evaluate simulation:", error);
-      alert("Failed to process simulation results. Please try again.");
-      setPhase("config");
+      alert(config.language === 'french'
+        ? "\u00c9chec du traitement des r\u00e9sultats. Veuillez r\u00e9essayer."
+        : "Failed to process simulation results. Please try again.");
+      resetSimulation();
     } finally {
       setIsEvaluating(false);
     }
   };
 
-  // Manual end session button also goes through closing
+  // Manual end session button — shows confirmation modal first
   const handleEndSession = () => {
     if (messages.length === 0) {
-      alert("No conversation recorded. Please try again.");
-      setPhase("config");
+      alert(config.language === 'french' 
+        ? "Aucune conversation enregistrée. Veuillez réessayer."
+        : "No conversation recorded. Please try again.");
+      resetSimulation();
       return;
     }
+    setShowEndConfirmModal(true);
+  };
+
+  const confirmEndSession = () => {
+    setShowEndConfirmModal(false);
     handleClosingPhase();
   };
 
-  // Typewriter effect for jury responses
-  const typewriterEffect = (text: string, callback?: () => void) => {
+  // Typewriter effect for jury responses (synchronized with speaking rate)
+  const typewriterEffect = (text: string, speakerProfKey?: string) => {
     const words = text.split(' ');
     let displayed = '';
     let index = 0;
     
+    // Calculate ms per word based on standard WPM (150 words per minute default) and the speaker's rate multiplier
+    const profile = speakerProfKey && VOICE_PROFILES[speakerProfKey] ? VOICE_PROFILES[speakerProfKey] : { rate: 1.0 };
+    // 150 WPM = 2.5 words per second = 1 word every 400ms.
+    // However, Web Speech API 'rate' of 1.0 is generally faster (close to 200 WPM). 
+    // We adjust it dynamically to match normal UI reading speed vs audio.
+    const baseWPM = 180; 
+    const wordsPerSecond = (baseWPM * profile.rate) / 60;
+    const msPerWord = Math.floor(1000 / wordsPerSecond);
+    
     const interval = setInterval(() => {
       if (index >= words.length) {
         clearInterval(interval);
-        if (callback) callback();
         return;
       }
       displayed += (index > 0 ? ' ' : '') + words[index];
       setTranscript(displayed);
       index++;
-    }, 80); // 80ms per word
+    }, msPerWord); 
   };
   
   // Handle AI jury response
@@ -479,18 +754,27 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       };
       setMessages((prev) => [...prev, juryMessage]);
       
-      // Set active speaker
-      setActiveSpeaker(speaker);
-      setIsAISpeaking(true);
+      // Random thinking time (1.5s to 3.5s) for realism
+      const thinkingDelay = Math.floor(Math.random() * 2000) + 1500;
       
-      // Start typewriter effect immediately (visual)
-      typewriterEffect(juryResponse);
+      // We are processing audio, so thinking UI will show
+      setIsProcessingAudio(true);
+      setActiveSpeaker(speaker); // Set early so they show as "thinking"
       
-      // Speak with voice profile
-      speakWithProfile(juryResponse, speaker as string, () => {
-        setIsAISpeaking(false);
-        setActiveSpeaker(null);
-      });
+      setTimeout(() => {
+        setIsProcessingAudio(false);
+        setIsAISpeaking(true);
+        
+        // Start typewriter effect for visual feedback, synced with speaker
+        typewriterEffect(juryResponse, speaker as string);
+        
+        // Speak with voice profile
+        speakWithProfile(juryResponse, speaker as string, () => {
+          setIsAISpeaking(false);
+          setActiveSpeaker(null);
+          playSoundEffect('chime'); // Signal it's the user's turn
+        });
+      }, thinkingDelay);
       
     } catch (error) {
       console.error('Failed to get AI response:', error);
@@ -508,6 +792,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     if (isRecording) {
       // Stop recording manually
       console.log("⏹️ Stopping recording...");
+      playSoundEffect('click');
       setIsRecording(false);
       setActiveSpeaker(null);
       
@@ -543,6 +828,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       }
 
       try {
+        playSoundEffect('pop');
         setTranscript('Listening...');
         setLiveCaption('');
         setIsRecording(true);
@@ -594,8 +880,64 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     },
   ];
 
+  // Helper function to handle the actual initialization after confirmation
+  const confirmAndInitialize = () => {
+    setShowConfirmModal(false);
+    handleInitialize();
+  };
+
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative">
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConfirmModal(false)}
+              className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
+            />
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-md pointer-events-auto p-6 flex flex-col items-center text-center"
+              >
+                <div className="w-16 h-16 rounded-full bg-yellow-100 border-2 border-black flex items-center justify-center mb-4">
+                  <AlertTriangle className="w-8 h-8 text-amber-600" />
+                </div>
+                
+                <h2 className="text-xl font-bold font-mono uppercase tracking-wider mb-2">
+                  Start Simulation?
+                </h2>
+                
+                <p className="text-gray-600 text-sm mb-6">
+                  This will deduct <span className="font-bold text-black border-b-2 border-yellow-300">30 credits</span> from your balance to generate AI jury interactions and evaluations.
+                </p>
+
+                <div className="flex gap-4 w-full">
+                  <button
+                    onClick={() => setShowConfirmModal(false)}
+                    className="flex-1 py-3 px-4 border-2 border-gray-300 text-gray-700 font-bold uppercase tracking-widest hover:border-black hover:text-black transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmAndInitialize}
+                    className="flex-1 py-3 px-4 bg-black text-white font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors"
+                  >
+                    Confirm Start
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
         {/* PHASE 1: Configuration Form */}
         {phase === "config" && (
@@ -604,61 +946,24 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="w-full h-full p-6 flex items-center justify-center"
+            className="w-full h-full p-6 flex items-center justify-center relative"
           >
             <div className="max-w-3xl w-full">
-              <h2 className="text-2xl font-bold mb-1 font-mono uppercase tracking-wider">
-                {t('simulation.setup')}
-              </h2>
-              <p className="text-gray-600 text-sm mb-4">{t('simulation.setup_subtitle')}</p>
-
-              {/* Chrome & Mic Warning */}
-              <div className="border border-black p-4 mb-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {/* Chrome PNG */}
-                    <img src="/images/chrome.png" alt="Chrome" className="w-8 h-8 shrink-0" />
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-widest">Recommended: Google Chrome</p>
-                      <p className="text-[11px] text-gray-500">Speech recognition is most reliable on Chrome. Other browsers may have limited support.</p>
-                    </div>
-                  </div>
-                  {/* Warning Icon (no text) */}
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 shrink-0 text-black">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                </div>
-                <div className="border-t border-gray-200 pt-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-widest">Microphone Check</p>
-                    <p className="text-[11px] text-gray-500">Ensure your mic is connected and permissions are granted before starting.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="shrink-0 border border-black px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors"
-                    onClick={async () => {
-                      try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                        stream.getTracks().forEach(t => t.stop());
-                        alert('✅ Microphone is working!');
-                      } catch {
-                        alert('❌ Microphone access denied or not available. Check browser settings.');
-                      }
-                    }}
-                  >
-                    Test Mic
-                  </button>
-                </div>
+              <div className="mb-6">
+                <h2 className="text-3xl font-black mb-2 font-mono uppercase tracking-wider">
+                  {t('simulation.setup')}
+                </h2>
+                <p className="text-gray-600 text-sm border-l-4 border-black pl-3">{t('simulation.setup_subtitle')}</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Left Column */}
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {/* Language Selection */}
-                  <div className="border border-black p-4">
-                    <label className="block text-xs font-semibold mb-2 uppercase tracking-widest">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
                       {t('simulation.report_language')}
                     </label>
                     <div className="flex gap-2">
@@ -666,10 +971,10 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                         <button
                           key={lang}
                           onClick={() => setConfig({ ...config, language: lang as Language })}
-                          className={`flex-1 py-2 px-3 border transition-colors text-sm ${
+                          className={`flex-1 py-3 px-4 border-2 transition-all text-sm font-bold uppercase tracking-widest ${
                             config.language === lang
                               ? "bg-black text-white border-black"
-                              : "bg-white text-black border-gray-300 hover:border-black"
+                              : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-black"
                           }`}
                         >
                           {lang.charAt(0).toUpperCase() + lang.slice(1)}
@@ -679,64 +984,113 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   </div>
 
                   {/* Duration Selection */}
-                  <div className="border border-black p-4">
-                    <label className="block text-xs font-semibold mb-2 uppercase tracking-widest">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
                       {t('simulation.duration')}
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[5, 10, 15, 20].map((duration) => (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[5, 15, 20, 30, 45, 60].map((duration) => (
                         <button
                           key={duration}
                           onClick={() => setConfig({ ...config, duration })}
-                          className={`py-2 px-3 border transition-colors text-sm ${
+                          className={`py-3 px-2 border-2 transition-all font-mono font-bold text-sm text-center ${
                             config.duration === duration
                               ? "bg-black text-white border-black"
-                              : "bg-white text-black border-gray-300 hover:border-black"
+                              : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-black"
                           }`}
                         >
-                          {duration} min
+                          {duration === 60 ? "60 min" : `${duration} min`}
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* Chrome & Mic Warning — Moved Below Duration */}
+                  {!isChrome ? (
+                    <div className="border border-red-500 bg-red-50 p-4 mt-6 space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4">
+                          {/* Chrome PNG */}
+                          <img src="/images/chrome.png" alt="Chrome" className="w-10 h-10 shrink-0 mt-1" />
+                          <div>
+                            <p className="text-sm font-bold uppercase tracking-widest text-red-700">Warning: Unsupported Browser Detected</p>
+                            <p className="text-xs text-red-600 mt-1 leading-relaxed">The Web Speech API requires Google Chrome to work. Your current browser is not supported. Please switch to Chrome.</p>
+                          </div>
+                        </div>
+                        <AlertTriangle className="w-6 h-6 shrink-0 text-red-500" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-gray-200 p-3 mt-6 flex flex-col sm:flex-row items-center justify-between text-xs bg-gray-50/50 gap-4">
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <img src="/images/chrome.png" alt="Chrome" className="w-4 h-4 grayscale opacity-50" />
+                        <span>Only compatible with Google Chrome</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 font-semibold uppercase tracking-widest hover:text-black transition-colors shrink-0 border border-gray-200 bg-white px-3 py-1 shadow-sm"
+                        onClick={async () => {
+                          try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            stream.getTracks().forEach(t => t.stop());
+                            alert('✅ Microphone is working!');
+                          } catch {
+                            alert('❌ Microphone access denied or not available. Check browser settings.');
+                          }
+                        }}
+                      >
+                        Test Mic
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Right Column - Difficulty */}
                 <div>
-                  <div className="border border-black p-4 h-full">
-                    <label className="block text-xs font-semibold mb-3 uppercase tracking-widest">
-                      {t('simulation.difficulty')}
-                    </label>
-                    <div className="space-y-2">
-                      {DIFFICULTY_CARDS.map((diff) => (
+                  <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
+                    {t('simulation.difficulty')}
+                  </label>
+                  <div className="space-y-3">
+                    {DIFFICULTY_CARDS.map((diff) => {
+                      const Icon = diff.icon;
+                      const isSelected = config.difficulty === diff.id;
+                      
+                      return (
                         <button
                           key={diff.id}
                           onClick={() => setConfig({ ...config, difficulty: diff.id })}
-                          className={`w-full p-3 border text-left transition-all ${
-                            config.difficulty === diff.id
-                              ? "bg-black text-white border-black"
-                              : "bg-white text-black border-gray-300 hover:border-black"
+                          className={`w-full p-4 border-2 text-left transition-all flex items-start gap-4 ${
+                            isSelected
+                              ? `border-black ${diff.bgAccent}`
+                              : `bg-white border-gray-200 ${diff.borderHover}`
                           }`}
                         >
-                          <div className="font-bold text-sm mb-0.5">{diff.title}</div>
-                          <div className={`text-xs ${config.difficulty === diff.id ? "text-gray-300" : "text-gray-600"}`}>
-                            {diff.description}
+                          <div className={`shrink-0 w-10 h-10 flex items-center justify-center border-2 border-black bg-white ${isSelected ? diff.color : 'text-black'}`}>
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className={`font-bold uppercase tracking-widest text-sm mb-1 ${isSelected ? diff.color : 'text-black'}`}>
+                              {diff.title}
+                            </div>
+                            <div className="text-xs text-gray-600 leading-relaxed">
+                              {diff.description}
+                            </div>
                           </div>
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
               {/* Initialize Button */}
-              <div className="mt-6 border-t border-black pt-6">
+              <div className="mt-8 pt-6">
                 <button
-                  onClick={handleInitialize}
+                  onClick={() => setShowConfirmModal(true)}
                   disabled={isProcessing || !profile || profile.credits < 30}
-                  className="w-full bg-black text-white py-4 font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  className="w-full bg-black text-white py-5 font-bold uppercase tracking-widest hover:bg-gray-900 transition-transform active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
                 >
-                  <div className="flex items-center justify-center gap-3">
+                  <div className="flex items-center justify-center gap-3 relative z-10">
                     {isProcessing ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="w-5 h-5 animate-spin" />
@@ -744,14 +1098,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       </div>
                     ) : (
                       <>
-                        <span>{t('simulation.initialize')}</span>
-                        <span className="flex items-center gap-1.5 bg-white text-black px-2 py-1 rounded-full text-[10px] font-extrabold normal-case tracking-normal shadow-sm group-hover:bg-gray-100 transition-colors">
+                        <span className="text-lg">Start Simulation</span>
+                        <span className="flex items-center gap-1.5 bg-white text-black px-3 py-1 text-sm font-extrabold normal-case tracking-normal shadow-[2px_2px_0px_0px_rgba(255,255,255,0.3)] group-hover:bg-gray-100 transition-colors">
                           30
                           <NextImage 
                             src="/images/favicon.jpeg" 
                             alt="Latexo" 
-                            width={14} 
-                            height={14} 
+                            width={16} 
+                            height={16} 
                             className="rounded-full"
                           />
                         </span>
@@ -760,11 +1114,19 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   </div>
                 </button>
 
-                {profile && profile.credits < 30 && (
-                  <p className="text-red-600 text-xs mt-2 text-center">
-                    {t('simulation.insufficient_credits', { credits: profile.credits })}
-                  </p>
-                )}
+                <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
+                  {profile && profile.credits >= 30 ? (
+                    <div className="flex items-center gap-2">
+                       <span>Estimated Balance:</span>
+                       <span className="text-black font-bold">{profile.credits - 30}</span>
+                       <span>Credits remaining</span>
+                    </div>
+                  ) : profile ? (
+                    <p className="text-red-600 font-bold border-b border-red-600">
+                      {t('simulation.insufficient_credits', { credits: profile.credits })}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
           </motion.div>
@@ -783,6 +1145,20 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               backgroundSize: "20px 20px",
             }}
           >
+            {/* Thesis filename — personalized banner */}
+            {reportName && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute top-6 left-1/2 -translate-x-1/2 px-5 py-2 border border-gray-300 bg-white/80 backdrop-blur-sm"
+              >
+                <span className="text-[10px] uppercase tracking-widest text-gray-400 mr-2">
+                  {config.language === 'french' ? 'Préparation de la soutenance pour' : 'Preparing defense for'}
+                </span>
+                <span className="text-xs font-bold text-gray-800 font-mono">{reportName}</span>
+              </motion.div>
+            )}
+
             <AnimatePresence mode="wait">
               {loadingStep === 0 && (
                 <motion.div
@@ -793,7 +1169,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   className="bg-black text-white px-8 py-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.3)]"
                 >
                   <p className="text-xl font-bold font-mono uppercase tracking-wider">
-                    {t('simulation.initializing')}
+                    {config.language === 'french' ? 'Initialisation de la simulation...' : t('simulation.initializing')}
                   </p>
                 </motion.div>
               )}
@@ -819,23 +1195,36 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       alt={JURY_MEMBERS[loadingStep - 1].name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        // Fallback to placeholder if image not found
                         e.currentTarget.style.display = "none";
                         e.currentTarget.parentElement!.innerHTML = `<span class="text-6xl font-bold text-black">${JURY_MEMBERS[loadingStep - 1].name[0]}</span>`;
                       }}
                     />
                   </motion.div>
 
-                  {/* Title */}
+                  {/* Title — typewriter character-by-character reveal */}
                   <motion.h2
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.2 }}
                     className="text-3xl font-bold uppercase tracking-wider border-b-4 border-black pb-2 inline-block"
                   >
-                    {loadingStep === 1 ? t('simulation.jury_title_technical') :
-                     loadingStep === 2 ? t('simulation.jury_title_academic') :
-                     t('simulation.jury_title_business')}
+                    {(() => {
+                      const title = loadingStep === 1
+                        ? t('simulation.jury_title_technical')
+                        : loadingStep === 2
+                        ? t('simulation.jury_title_academic')
+                        : t('simulation.jury_title_business');
+                      return String(title).split('').map((char: string, i: number) => (
+                        <motion.span
+                          key={`${loadingStep}-${i}`}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.3 + i * 0.03, duration: 0.15 }}
+                        >
+                          {char}
+                        </motion.span>
+                      ));
+                    })()}
                   </motion.h2>
 
                   {/* Subtitle */}
@@ -862,6 +1251,17 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Skip Intro button */}
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 2 }}
+              onClick={() => setLoadingStep(4)}
+              className="absolute bottom-6 right-6 text-[10px] uppercase tracking-widest text-gray-400 hover:text-black border border-gray-300 hover:border-black px-3 py-1.5 transition-colors"
+            >
+              Skip Intro
+            </motion.button>
           </motion.div>
         )}
 
@@ -872,39 +1272,127 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="w-full h-full flex flex-col"
+            className="w-full h-full flex flex-col relative"
           >
-            {/* Top Bar - Timer & Stress Meter */}
-            <div className="border-b border-black py-4 px-6 flex items-center justify-between">
-              <div className="flex items-center gap-8">
-                <div>
-                  <div className="text-4xl font-mono font-bold">{formatTime(timeRemaining)}</div>
-                  <div className="text-xs uppercase tracking-widest text-gray-600 mt-1">{t('simulation.time_remaining')}</div>
-                </div>
-                <StressMeter level={stressLevel} />
+            {/* Paused Overlay */}
+            <AnimatePresence>
+              {isPaused && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4"
+                >
+                  <div className="bg-white border-4 border-black px-8 py-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+                    <p className="text-2xl font-black font-mono uppercase tracking-wider">
+                      {config.language === 'french' ? '⏸ En Pause' : '⏸ Paused'}
+                    </p>
+                  </div>
+                  <p className="text-white text-xs uppercase tracking-widest">
+                    {config.language === 'french' 
+                      ? 'La simulation reprendra quand vous revenez à cet onglet'
+                      : 'Simulation will resume when you return to this tab'}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {/* Top Bar - Centered Timer */}
+            <div className="border-b border-black py-4 px-6 flex items-center justify-center">
+              <div className="text-center">
+                <motion.div 
+                  className={`text-4xl font-mono font-bold ${
+                    timeRemaining <= 60 
+                      ? "text-red-500" 
+                      : timeRemaining <= 180 
+                        ? "text-orange-500" 
+                        : "text-black"
+                  }`}
+                  animate={timeRemaining <= 60 ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+                  transition={timeRemaining <= 60 ? { repeat: Infinity, duration: 1, ease: "easeInOut" } : {}}
+                >
+                  {formatTime(timeRemaining)}
+                </motion.div>
+                <div className="text-xs uppercase tracking-widest text-gray-600 mt-1">{t('simulation.time_remaining')}</div>
               </div>
             </div>
 
             {/* Center - Jury Panel with Talking Avatars */}
             <div className="flex-1 flex items-center justify-center gap-8 md:gap-16 p-8">
-              {JURY_MEMBERS.map((member, index) => (
-                <TalkingAvatar
-                  key={member.name}
-                  name={member.name}
-                  imagePath={member.imagePath}
-                  bgColor={member.bgColor}
-                  isSpeaking={
-                    activeSpeaker === "technical" && index === 0 ||
-                    activeSpeaker === "academic" && index === 1 ||
-                    activeSpeaker === "business" && index === 2
-                  }
-                  size="large"
-                />
-              ))}
+              {JURY_MEMBERS.map((member, index) => {
+                const isThisJurorSpeaking = 
+                  (activeSpeaker === "technical" && index === 0) ||
+                  (activeSpeaker === "academic" && index === 1) ||
+                  (activeSpeaker === "business" && index === 2);
+                  
+                const isAnyoneSpeaking = isAISpeaking || isRecording || isProcessingAudio;
+                
+                return (
+                  <TalkingAvatar
+                    key={member.name}
+                    name={member.name}
+                    imagePath={member.imagePath}
+                    bgColor={member.bgColor}
+                    isSpeaking={isThisJurorSpeaking && isAISpeaking}
+                    isThinking={isThisJurorSpeaking && isProcessingAudio}
+                    isInactive={isAnyoneSpeaking && !isThisJurorSpeaking}
+                    size="large"
+                  />
+                );
+              })}
             </div>
 
             {/* Bottom - Voice Interface */}
             <div className="border-t border-black p-6 flex flex-col items-center gap-6">
+            
+              {/* Turn Indicator / Status Banner */}
+              <div className="h-6 flex items-center justify-center">
+                <AnimatePresence mode="wait">
+                  {isProcessingAudio ? (
+                    <motion.div
+                      key="thinking"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="text-xs font-bold uppercase tracking-widest text-yellow-600 flex items-center gap-2"
+                    >
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      The Jury is thinking...
+                    </motion.div>
+                  ) : isAISpeaking ? (
+                     <motion.div
+                      key="speaking"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="text-xs font-bold uppercase tracking-widest text-blue-600"
+                    >
+                      Juror is speaking...
+                    </motion.div>
+                  ) : isRecording ? (
+                     <motion.div
+                      key="recording"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="text-xs font-bold uppercase tracking-widest text-red-600 flex items-center gap-2"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                      Recording...
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="waiting"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="text-xs font-bold uppercase tracking-widest text-gray-500"
+                    >
+                      Your turn. Press <span className="text-black bg-gray-200 px-1 py-0.5 rounded shadow-sm mx-1">Space</span> or click the mic.
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               {/* Microphone Button */}
               <div className="flex flex-col items-center gap-4">
                 <MicrophoneButton
@@ -942,11 +1430,63 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               <button
                 onClick={handleEndSession}
                 disabled={isEvaluating}
-                className="text-sm uppercase tracking-widest text-gray-600 hover:text-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-sm uppercase tracking-widest text-gray-600 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isEvaluating ? t('simulation.evaluating') : t('simulation.end_session')}
               </button>
             </div>
+
+            {/* End Session Confirmation Modal */}
+            <AnimatePresence>
+              {showEndConfirmModal && (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowEndConfirmModal(false)}
+                    className="fixed inset-0 bg-black/50 z-[9999] backdrop-blur-sm"
+                  />
+                  <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-md pointer-events-auto p-6 flex flex-col items-center text-center"
+                    >
+                      <div className="w-16 h-16 rounded-full bg-red-100 border-2 border-black flex items-center justify-center mb-4">
+                        <AlertTriangle className="w-8 h-8 text-red-600" />
+                      </div>
+                      
+                      <h2 className="text-xl font-bold font-mono uppercase tracking-wider mb-2">
+                        {config.language === 'french' ? 'Terminer la session ?' : 'End Session?'}
+                      </h2>
+                      
+                      <p className="text-gray-600 text-sm mb-6">
+                        {config.language === 'french' 
+                          ? 'Cette action mettra fin \u00e0 votre soutenance et lancera l\u2019\u00e9valuation du jury. Vous ne pourrez pas reprendre.'
+                          : 'This will end your defense and trigger the jury evaluation. You will not be able to resume.'}
+                      </p>
+
+                      <div className="flex gap-4 w-full">
+                        <button
+                          onClick={() => setShowEndConfirmModal(false)}
+                          className="flex-1 py-3 px-4 border-2 border-gray-300 text-gray-700 font-bold uppercase tracking-widest hover:border-black hover:text-black transition-colors"
+                        >
+                          {config.language === 'french' ? 'Annuler' : 'Cancel'}
+                        </button>
+                        <button
+                          onClick={confirmEndSession}
+                          className="flex-1 py-3 px-4 bg-red-600 text-white font-bold uppercase tracking-widest hover:bg-red-700 transition-colors"
+                        >
+                          {config.language === 'french' ? 'Confirmer' : 'End Now'}
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                </>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 
@@ -963,24 +1503,39 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               backgroundSize: "20px 20px",
             }}
           >
-            {/* Active Speaker Avatar */}
-            {activeSpeaker && (
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="w-32 h-32 rounded-full bg-gray-100 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)] flex items-center justify-center overflow-hidden"
-              >
-                <img
-                  src={JURY_MEMBERS.find((_, i) => 
-                    (activeSpeaker === 'technical' && i === 0) ||
-                    (activeSpeaker === 'academic' && i === 1) ||
-                    (activeSpeaker === 'business' && i === 2)
-                  )?.imagePath || '/jury/strict-academic.png'}
-                  alt="Jury"
-                  className="w-full h-full object-cover"
-                />
-              </motion.div>
-            )}
+            {/* All 3 Jury Avatars — active speaker highlighted */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-end justify-center gap-6 md:gap-10"
+            >
+              {JURY_MEMBERS.map((member, index) => {
+                const speakerKey = index === 0 ? 'technical' : index === 1 ? 'academic' : 'business';
+                const isActive = activeSpeaker === speakerKey;
+                return (
+                  <motion.div
+                    key={member.name}
+                    animate={{
+                      scale: isActive ? 1.1 : 0.85,
+                      opacity: isActive ? 1 : 0.45,
+                    }}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    className="flex flex-col items-center gap-2"
+                  >
+                    <div className={`${isActive ? 'w-28 h-28' : 'w-20 h-20'} rounded-full ${member.bgColor} border-4 ${isActive ? 'border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,0.2)]' : 'border-gray-300'} flex items-center justify-center overflow-hidden transition-all duration-300`}>
+                      <img
+                        src={member.imagePath}
+                        alt={member.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className={`text-[10px] uppercase tracking-widest ${isActive ? 'text-black font-bold' : 'text-gray-400'}`}>
+                      {member.name}
+                    </span>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
 
             {/* Closing Remark */}
             <motion.div
@@ -989,21 +1544,60 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               transition={{ delay: 0.3 }}
               className="max-w-xl text-center px-8"
             >
-              <p className="text-lg text-gray-800 italic">"{transcript}"</p>
+              <p className="text-lg text-gray-800 italic">&quot;{transcript}&quot;</p>
             </motion.div>
 
-            {/* Evaluating indicator */}
+            {/* Session Stats */}
+            {sessionStartTime > 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6 }}
+                className="flex items-center gap-6 text-[11px] uppercase tracking-widest text-gray-400"
+              >
+                <span>
+                  Duration: {Math.floor((Date.now() - sessionStartTime) / 60000)} min
+                </span>
+                <span className="w-px h-3 bg-gray-300" />
+                <span>
+                  {messages.length} exchange{messages.length !== 1 ? 's' : ''}
+                </span>
+              </motion.div>
+            )}
+
+            {/* Deliberation progress — multi-step messages */}
             {isEvaluating && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
-                className="flex items-center gap-3"
+                className="flex flex-col items-center gap-4 max-w-sm w-full"
               >
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm uppercase tracking-widest text-gray-500">
-                  {t('simulation.evaluating') || 'The jury is deliberating...'}
-                </span>
+                {/* Progress bar */}
+                <div className="w-full h-1 bg-gray-200 border border-gray-300 overflow-hidden">
+                  <motion.div
+                    initial={{ width: '0%' }}
+                    animate={{ width: `${((deliberationStep + 1) / DELIBERATION_MESSAGES.length) * 100}%` }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    className="h-full bg-black"
+                  />
+                </div>
+                {/* Cycling message */}
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={deliberationStep}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.25 }}
+                      className="text-xs uppercase tracking-widest text-gray-500 font-mono"
+                    >
+                      {DELIBERATION_MESSAGES[deliberationStep]}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
               </motion.div>
             )}
           </motion.div>
@@ -1011,120 +1605,27 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
         {/* PHASE 4: Aftermath — Evaluation Results */}
         {phase === "aftermath" && evaluationResults && (
-          <motion.div
-            key="aftermath"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="w-full h-full p-6 overflow-y-auto"
-          >
-            <div className="max-w-3xl mx-auto space-y-8">
-              {/* Header */}
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold font-mono uppercase tracking-wider">
-                  {t('simulation.results_title') || 'Defense Results'}
-                </h2>
-                <p className="text-sm text-gray-500 uppercase tracking-widest">
-                  {t('simulation.results_subtitle') || 'Your performance summary'}
-                </p>
-              </div>
-
-              {/* Score + Mention */}
-              <div className="border-4 border-black p-8 text-center">
-                <div className="text-6xl font-bold font-mono">
-                  {evaluationResults.final_grade}
-                  <span className="text-2xl text-gray-500">/20</span>
-                </div>
-                <div className="mt-2 inline-block bg-black text-white px-4 py-1 text-sm font-bold uppercase tracking-widest">
-                  {evaluationResults.mention}
-                </div>
-              </div>
-
-              {/* 3-Axis Proficiency */}
-              <div className="border border-black p-6">
-                <h3 className="text-xs font-bold uppercase tracking-widest mb-4">
-                  {t('simulation.proficiency') || 'Proficiency Axes'}
-                </h3>
-                <div className="space-y-4">
-                  {[
-                    { label: 'Technical', value: evaluationResults.evaluation?.proficiency?.tech || 0, color: 'bg-cyan-500' },
-                    { label: 'Academic', value: evaluationResults.evaluation?.proficiency?.acad || 0, color: 'bg-purple-500' },
-                    { label: 'Business', value: evaluationResults.evaluation?.proficiency?.biz || 0, color: 'bg-amber-500' },
-                  ].map((axis) => (
-                    <div key={axis.label}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="font-semibold">{axis.label}</span>
-                        <span className="font-mono">{axis.value}%</span>
-                      </div>
-                      <div className="w-full h-3 bg-gray-200 border border-black">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${axis.value}%` }}
-                          transition={{ duration: 1, delay: 0.3 }}
-                          className={`h-full ${axis.color}`}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Jury Feedback Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { key: 'tech', name: 'Malek', title: 'Technical Expert', borderColor: 'border-cyan-500' },
-                  { key: 'strict', name: 'Souad', title: 'Strict Academic', borderColor: 'border-purple-500' },
-                  { key: 'business', name: 'Amir', title: 'Business Strategist', borderColor: 'border-amber-500' },
-                ].map((juror) => {
-                  const fb = evaluationResults.feedback?.[juror.key];
-                  return (
-                    <div key={juror.key} className={`border-2 ${juror.borderColor} p-4 space-y-3`}>
-                      <div>
-                        <div className="font-bold text-sm">{juror.name}</div>
-                        <div className="text-xs text-gray-500 uppercase tracking-widest">{juror.title}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Comment</div>
-                        <p className="text-sm text-gray-700">{fb?.comment || '—'}</p>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Tip</div>
-                        <p className="text-sm text-gray-700">{fb?.tip || '—'}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Sticker Roast */}
-              {evaluationResults.sticker_caption && (
-                <div className="border-2 border-dashed border-black p-6 text-center">
-                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-                    🔥 Sticker Roast
-                  </div>
-                  <div className="text-2xl font-bold font-mono">
-                    {evaluationResults.sticker_caption}
-                  </div>
-                </div>
-              )}
-
-              {/* Back to Setup */}
-              <div className="text-center pt-4 pb-8">
-                <button
-                  onClick={() => {
-                    setPhase("config");
-                    setTimeRemaining(0);
-                    setMessages([]);
-                    setEvaluationResults(null);
-                    setStressLevel(0);
-                  }}
-                  className="bg-black text-white px-8 py-3 font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors"
-                >
-                  {t('simulation.back_to_setup') || 'Back to Setup'}
-                </button>
-              </div>
-            </div>
-          </motion.div>
+           <motion.div
+             key="aftermath"
+             initial={{ opacity: 0 }}
+             animate={{ opacity: 1 }}
+             className="w-full h-full p-6 flex items-center justify-center flex-col gap-4"
+           >
+             <Loader2 className="w-8 h-8 animate-spin text-black" />
+             <div className="text-xl font-bold font-mono uppercase tracking-widest text-black">
+               {t('simulation.results_title') || 'Redirecting to your Results...'}
+             </div>
+             
+             {/* Automatically trigger the tab switch to the dashboard version */}
+             {(() => {
+                if (typeof window !== 'undefined' && onSimulationComplete && evaluationResults.simulation_id) {
+                  // Small timeout to let the fade-in happen
+                  setTimeout(() => onSimulationComplete(evaluationResults.simulation_id), 1200);
+                }
+                return null;
+             })()}
+             
+           </motion.div>
         )}
       </AnimatePresence>
     </div>

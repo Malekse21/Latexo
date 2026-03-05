@@ -2,16 +2,19 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Plus, User, LogOut, CreditCard, Languages } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, User, LogOut, Languages, Trophy } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/context/user-context";
-import { PassportCard } from "@/components/dashboard/PassportCard";
 
 export function DashboardNavbar() {
+  const router = useRouter();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isPassportOpen, setIsPassportOpen] = useState(false);
-  const { profile, loading, signOut, language, setLanguage, t } = useUser();
+  const { profile, user, loading, signOut, language, setLanguage, t } = useUser();
+  const avatarUrl = profile?.avatar_url?.includes('dicebear.com')
+    ? (user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null)
+    : profile?.avatar_url;
 
   const handleLogout = async () => {
     setIsProfileOpen(false);
@@ -54,13 +57,14 @@ export function DashboardNavbar() {
       </div>
 
       {/* Right: Profile */}
-      <div className="relative">
+      <div className="flex items-center gap-3">
+        <div className="relative">
         <button 
           onClick={() => setIsProfileOpen(!isProfileOpen)}
           className="flex items-center justify-center w-11 h-11 border-[1.5px] border-[#E5E5E5] rounded-full hover:border-black transition-colors overflow-hidden bg-gray-50"
         >
-          {profile?.avatar_url ? (
-            <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
           ) : (
             <User className="w-6 h-6 text-gray-700" />
           )}
@@ -74,11 +78,11 @@ export function DashboardNavbar() {
              <button 
                onClick={() => {
                  setIsProfileOpen(false);
-                 setIsPassportOpen(true);
+                 router.push('/dashboard/leaderboard');
                }}
                className="w-full text-left px-4 py-2 text-sm hover:bg-black hover:text-white flex items-center gap-2 transition-colors"
              >
-               <CreditCard className="w-4 h-4" /> {t('common.id')}
+               <Trophy className="w-4 h-4" /> {t('Leaderboard') || 'Leaderboard'}
              </button>
               <div className="px-4 py-2 text-sm border-b border-[#E5E5E5] flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -108,9 +112,7 @@ export function DashboardNavbar() {
              </button>
           </div>
         )}
-        
-        {/* Passport Card Modal */}
-        {isPassportOpen && <PassportCard onClose={() => setIsPassportOpen(false)} />}
+        </div>
       </div>
     </nav>
   );

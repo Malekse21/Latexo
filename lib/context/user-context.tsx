@@ -12,6 +12,8 @@ interface Profile {
   credits: number;
   active_report_id: string | null;
   defense_date: string | null;
+  university?: string | null;
+  specialty?: string | null;
   total_sessions?: number;
   total_time_seconds?: number;
   best_score?: number;

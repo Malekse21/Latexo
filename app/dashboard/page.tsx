@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useUser } from "@/lib/context/user-context";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { UploadModal } from "@/components/dashboard/UploadModal";
-import { GoldenFrame } from "@/components/dashboard/GoldenFrame";
+import { ReportFrame } from "@/components/dashboard/ReportFrame";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
 import { DefenseArena } from "@/components/dashboard/DefenseArena";
 import { AftermathDashboard } from "@/components/dashboard/AftermathDashboard";
@@ -54,7 +54,7 @@ const GREETINGS = [
   "Knowledge awaits"
 ];
 
-export default function DashboardPage() {
+function DashboardContent() {
   const { profile, refreshProfile, t, language } = useUser();
   const [activeTab, setActiveTab] = useState<Tab>(null);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
@@ -227,6 +227,14 @@ export default function DashboardPage() {
         onComplete={handleUploadComplete}
       />
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" /></div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }
 

@@ -4,14 +4,14 @@ import { motion } from "framer-motion";
 import { Upload, Plus } from "lucide-react";
 import Image from "next/image";
 
-interface GoldenFrameProps {
+interface ReportFrameProps {
   isEmpty: boolean;
   thumbnailUrl?: string | null;
   onUploadClick: () => void;
   className?: string; // Allow external class injection
 }
 
-export function GoldenFrame({ isEmpty, thumbnailUrl, onUploadClick, className }: GoldenFrameProps) {
+export function ReportFrame({ isEmpty, thumbnailUrl, onUploadClick, className }: ReportFrameProps) {
   return (
     <div className={`relative w-full aspect-[1/1.414] mx-auto ${className || ''}`}>
       {/* The Frame Container (Now Minimalist Black) */}

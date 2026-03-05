@@ -113,5 +113,19 @@
     "failed": "Échec du téléchargement. Veuillez réessayer.",
     "analyzing_subtitle": "Cela peut prendre quelques secondes...",
     "try_again": "Réessayer"
+  },
+  "leaderboard": {
+    "title": "CLASSEMENT",
+    "global": "Global",
+    "university": "Mon Université",
+    "specialty": "Ma Spécialité",
+    "rank": "Rang",
+    "name": "Nom",
+    "rating": "Note",
+    "sessions": "Sessions",
+    "you": "VOUS",
+    "empty": "Aucun étudiant classé pour le moment.",
+    "not_in_top": "Votre Classement",
+    "back": "Retour"
   }
 }

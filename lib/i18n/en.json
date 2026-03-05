@@ -113,5 +113,19 @@
     "failed": "Upload failed. Please try again.",
     "analyzing_subtitle": "This may take a few seconds...",
     "try_again": "Try Again"
+  },
+  "leaderboard": {
+    "title": "LEADERBOARD",
+    "global": "Global",
+    "university": "My University",
+    "specialty": "My Specialty",
+    "rank": "Rank",
+    "name": "Name",
+    "rating": "Rating",
+    "sessions": "Sessions",
+    "you": "YOU",
+    "empty": "No ranked students yet.",
+    "not_in_top": "Your Ranking",
+    "back": "Back"
   }
 }

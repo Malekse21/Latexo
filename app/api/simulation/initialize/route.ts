@@ -120,10 +120,12 @@ export async function POST(req: NextRequest) {
     if (report.is_unlocked && report.data && Object.keys(report.data).length > 0) {
       console.log('✅ Skeleton already exists, returning cached data');
       
-      // Generate first jury message even if skeleton exists
+      // Generate first jury message in the selected language
       const firstJuryMessage = {
         speaker: 'academic',
-        text: 'Welcome to your defense simulation. We have reviewed your work and are ready to begin. Let us start with your project overview.',
+        text: selectedLanguage === 'french'
+          ? 'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer. Veuillez nous présenter un aperçu de votre projet.'
+          : 'Welcome to your defense simulation. We have reviewed your work and are ready to begin. Please give us an overview of your project.',
         emotion: 'serious'
       };
       
@@ -178,7 +180,9 @@ export async function POST(req: NextRequest) {
     // If firstJuryMessage is nested at root as instructed in my consolidated schema:
     const firstJuryMessage = result.firstJuryMessage || {
       speaker: 'academic',
-      text: 'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer.',
+      text: selectedLanguage === 'french'
+        ? 'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer. Veuillez nous présenter un aperçu de votre projet.'
+        : 'Welcome to your defense simulation. We have reviewed your work and are ready to begin. Please give us an overview of your project.',
       emotion: 'serious'
     };
 

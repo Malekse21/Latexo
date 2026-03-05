@@ -1,19 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState, useRef } from "react";
+import { motion, useSpring, useTransform } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import {
-  Radar,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  ResponsiveContainer,
-} from "recharts";
+import { useUser } from "@/lib/context/user-context";
+import NextImage from "next/image";
+import html2canvas from "html2canvas";
 
+// ─── Types ────────────────────────────────────────────────────
 interface SimulationData {
   id: string;
   final_grade: number;
+  mention?: string;
   metrics: {
     technical: number;
     academic: number;
@@ -26,11 +24,23 @@ interface SimulationData {
     avg_response_time: number;
     total_duration: number;
   };
-  jury_feedback: {
+  // Legacy
+  jury_feedback?: {
     tech_quote: string;
     strict_quote: string;
     business_quote: string;
   };
+  // New columns
+  evaluation?: {
+    score: number;
+    proficiency: { tech: number; acad: number; biz: number };
+  };
+  feedback?: {
+    tech: { comment: string; tip: string };
+    strict: { comment: string; tip: string };
+    business: { comment: string; tip: string };
+  };
+  sticker_caption?: string;
   created_at: string;
 }
 
@@ -38,38 +48,56 @@ interface AftermathDashboardProps {
   simulationId: string;
 }
 
+// ─── Jury Data ────────────────────────────────────────────────
 const JURY_MEMBERS = [
   {
-    name: "Oliver",
+    key: "tech" as const,
+    name: "Malek",
     title: "Technical Expert",
     bgColor: "bg-cyan-100",
     imagePath: "/jury/technical-expert.png",
-    quoteKey: "tech_quote" as const,
+    legacyKey: "tech_quote" as const,
   },
   {
-    name: "Abigail",
+    key: "strict" as const,
+    name: "Souad",
     title: "Strict Academic",
     bgColor: "bg-purple-100",
     imagePath: "/jury/strict-academic.png",
-    quoteKey: "strict_quote" as const,
+    legacyKey: "strict_quote" as const,
   },
   {
-    name: "Jasper",
+    key: "business" as const,
+    name: "Amir",
     title: "Business Strategist",
     bgColor: "bg-amber-100",
     imagePath: "/jury/business-strategist.png",
-    quoteKey: "business_quote" as const,
+    legacyKey: "business_quote" as const,
   },
 ];
 
+// ─── Component ────────────────────────────────────────────────
 export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
+  const { profile, user } = useUser();
+  const avatarUrl = profile?.avatar_url?.includes('dicebear.com')
+    ? (user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null)
+    : profile?.avatar_url;
   const [simulation, setSimulation] = useState<SimulationData | null>(null);
+  const [lastScore, setLastScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [downloadingCard, setDownloadingCard] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const stickerRef = useRef<HTMLDivElement>(null);
+
+  // Random jury member for the sticker
+  const [stickerJury] = useState(() =>
+    JURY_MEMBERS[Math.floor(Math.random() * JURY_MEMBERS.length)]
+  );
 
   useEffect(() => {
-    async function fetchSimulation() {
+    async function fetchData() {
       const supabase = createClient();
+
+      // Fetch current simulation
       const { data, error } = await supabase
         .from("simulations")
         .select("*")
@@ -78,47 +106,73 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
 
       if (error) {
         console.error("Failed to fetch simulation:", error);
-      } else {
-        setSimulation(data);
+        setLoading(false);
+        return;
       }
+
+      setSimulation(data);
+
+      // Fetch previous simulation for "last score"
+      if (data) {
+        const { data: prevSims } = await supabase
+          .from("simulations")
+          .select("final_grade")
+          .eq("user_id", data.user_id || profile?.id)
+          .lt("created_at", data.created_at)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (prevSims && prevSims.length > 0) {
+          setLastScore(prevSims[0].final_grade);
+        }
+      }
+
       setLoading(false);
     }
 
-    fetchSimulation();
-  }, [simulationId]);
+    fetchData();
+  }, [simulationId, profile?.id]);
 
-  const handleDownloadCard = async () => {
-    setDownloadingCard(true);
+  // ─── Download Sticker ─────────────────────────────────────
+  const handleDownloadSticker = async () => {
+    if (!stickerRef.current) return;
+    setDownloading(true);
     try {
-      const response = await fetch(
-        `/api/survivor-card?simulation_id=${simulationId}`
-      );
-      if (!response.ok) throw new Error("Failed to generate card");
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `latexo-survivor-${simulation?.final_grade}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to download card:", error);
-      alert("Failed to generate survivor card");
+      const canvas = await html2canvas(stickerRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      });
+      const link = document.createElement("a");
+      link.download = `latexo-sticker-${simulation?.final_grade}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (err) {
+      console.error("Sticker download failed:", err);
     } finally {
-      setDownloadingCard(false);
+      setDownloading(false);
     }
   };
 
+  // ─── Animated Score Counter ───────────────────────────────
+  const animatedScore = useSpring(0, { duration: 2400, bounce: 0 });
+  const displayScore = useTransform(animatedScore, (v) => v.toFixed(1));
+
+  useEffect(() => {
+    if (simulation?.final_grade) {
+      // Small delay before starting the count
+      const timer = setTimeout(() => {
+        animatedScore.set(simulation.final_grade);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [simulation?.final_grade, animatedScore]);
+
+  // ─── Loading / Error States ───────────────────────────────
   if (loading) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-xl font-mono uppercase tracking-widest">
-            Loading Results...
-          </div>
+        <div className="text-xl font-mono uppercase tracking-widest animate-pulse">
+          Loading Results...
         </div>
       </div>
     );
@@ -127,170 +181,268 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
   if (!simulation) {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-xl font-mono uppercase tracking-widest">
-            Simulation Not Found
-          </div>
+        <div className="text-xl font-mono uppercase tracking-widest">
+          Simulation Not Found
         </div>
       </div>
     );
   }
 
-  const radarData = [
-    { subject: "Technical", value: simulation.metrics.technical },
-    { subject: "Academic", value: simulation.metrics.academic },
-    { subject: "Market", value: simulation.metrics.market },
-    { subject: "Fluency", value: simulation.metrics.fluency },
-    { subject: "Stress", value: 100 - simulation.metrics.stress }, // Invert stress for visual consistency
-  ];
+  // ─── Derived Data ─────────────────────────────────────────
+  const proficiency = simulation.evaluation?.proficiency || {
+    tech: simulation.metrics.technical,
+    acad: simulation.metrics.academic,
+    biz: simulation.metrics.market,
+  };
 
-  const isPassing = simulation.final_grade >= 12;
+  const mention =
+    simulation.mention ||
+    (simulation.final_grade >= 16
+      ? "Très Bien"
+      : simulation.final_grade >= 14
+      ? "Bien"
+      : simulation.final_grade >= 12
+      ? "Assez Bien"
+      : simulation.final_grade >= 10
+      ? "Passable"
+      : "Ajourné");
 
+  const isPassing = simulation.final_grade >= 10;
+  const stickerCaption = simulation.sticker_caption || "Ma3andekch niveau 😤";
+  const scoreDelta = lastScore !== null ? simulation.final_grade - lastScore : null;
+
+  // ─── Render ───────────────────────────────────────────────
   return (
-    <div className="w-full h-full overflow-y-auto p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
+    <div className="w-full h-full overflow-y-auto p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+
+        {/* ══════════════════════════════════════════════════════
+            SECTION 1 — Score Card
+            ══════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center"
+          className="relative border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
         >
-          <h1 className="text-4xl font-bold font-mono uppercase tracking-wider mb-2">
-            The Aftermath
-          </h1>
-          <p className="text-gray-600 text-sm">
-            Your defense performance has been evaluated
-          </p>
-        </motion.div>
-
-        {/* Verdict Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="relative border-4 border-black p-12 bg-white shadow-[12px_12px_0px_0px_rgba(0,0,0,0.2)]"
-        >
-          <div className="text-center">
-            <div className="text-8xl font-bold mb-4">
-              {simulation.final_grade.toFixed(1)}
-              <span className="text-4xl text-gray-600">/20</span>
-            </div>
-            <div className="text-sm uppercase tracking-widest text-gray-600 mb-2">
-              Final Grade
-            </div>
+          {/* Latexo Branding — top right */}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <NextImage
+              src="/images/favicon.jpeg"
+              alt="Latexo"
+              width={22}
+              height={22}
+              className="rounded-full"
+            />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+              Latexo
+            </span>
           </div>
 
-          {/* Tilted Stamp */}
-          <motion.div
-            initial={{ opacity: 0, rotate: 0, scale: 0 }}
-            animate={{ opacity: 1, rotate: 5, scale: 1 }}
-            transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
-            className={`absolute top-8 right-8 px-6 py-3 border-4 ${
-              isPassing ? "border-black" : "border-red-600"
-            } font-bold text-2xl uppercase tracking-wider transform rotate-[5deg]`}
-            style={{
-              background: isPassing ? "black" : "#dc2626",
-              color: "white",
-            }}
-          >
-            {isPassing ? "DEFENSE READY ✓" : "REVISION NEEDED ⚠"}
-          </motion.div>
-        </motion.div>
-
-        {/* Performance Radar + Behavioral Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Radar Chart */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-            className="border-2 border-black p-6 bg-white"
-          >
-            <h3 className="text-xl font-bold uppercase tracking-wider mb-4 text-center">
-              Performance Breakdown
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#000" strokeWidth={1} />
-                <PolarAngleAxis
-                  dataKey="subject"
-                  tick={{ fill: "#000", fontSize: 12, fontWeight: 600 }}
+          <div className="flex items-center gap-6">
+            {/* Profile Picture */}
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-black bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
                 />
-                <Radar
-                  name="Performance"
-                  dataKey="value"
-                  stroke="#000"
-                  strokeWidth={2}
-                  fill="none"
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </motion.div>
+              ) : (
+                <span className="text-3xl font-bold text-gray-400">
+                  {profile?.full_name?.[0]?.toUpperCase() || "?"}
+                </span>
+              )}
+            </div>
 
-          {/* Behavioral Stats */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-            className="border-2 border-black p-6 bg-white"
-          >
-            <h3 className="text-xl font-bold uppercase tracking-wider mb-6 text-center">
-              Behavioral Analysis
-            </h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center border-b border-gray-300 pb-3">
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  Hesitations Detected
-                </span>
-                <span className="text-2xl font-bold">
-                  {simulation.behavioral_stats.filler_count}
-                </span>
+            {/* Score Info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-600 truncate">
+                {profile?.full_name || "Student"}
+              </p>
+
+              <div className="flex items-baseline gap-2 mt-1">
+                <motion.span className="text-6xl md:text-8xl font-black leading-none tracking-tighter">
+                  {displayScore}
+                </motion.span>
+                <span className="text-2xl md:text-4xl text-gray-300 font-bold">/20</span>
               </div>
-              <div className="flex justify-between items-center border-b border-gray-300 pb-3">
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  Avg Response Time
+
+              <div className="flex items-center gap-3 mt-4 flex-wrap">
+                {/* Mention Badge */}
+                <span
+                  className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest border-2 ${
+                    isPassing
+                      ? "border-black bg-black text-white"
+                      : "border-red-600 bg-red-600 text-white"
+                  }`}
+                >
+                  {mention}
                 </span>
-                <span className="text-2xl font-bold">
-                  {simulation.behavioral_stats.avg_response_time}s
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-b border-gray-300 pb-3">
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  Total Duration
-                </span>
-                <span className="text-2xl font-bold">
-                  {Math.floor(simulation.behavioral_stats.total_duration / 60)}:
-                  {String(
-                    simulation.behavioral_stats.total_duration % 60
-                  ).padStart(2, "0")}
-                </span>
+
+                {/* Last Score Comparison */}
+                {scoreDelta !== null && (
+                  <span className="text-xs text-gray-500 font-mono">
+                    Last: {lastScore?.toFixed(1)}{" "}
+                    <span
+                      className={
+                        scoreDelta > 0
+                          ? "text-green-600"
+                          : scoreDelta < 0
+                          ? "text-red-500"
+                          : "text-gray-400"
+                      }
+                    >
+                      ({scoreDelta > 0 ? "+" : ""}
+                      {scoreDelta.toFixed(1)})
+                    </span>
+                  </span>
+                )}
+                {scoreDelta === null && (
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    First session
+                  </span>
+                )}
               </div>
             </div>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
 
-        {/* Jury Feedback Grid */}
+        {/* ══════════════════════════════════════════════════════
+            SECTION 2 — Proficiency Bars + Downloadable Sticker
+            ══════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
+          transition={{ delay: 0.2 }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
         >
-          <h3 className="text-2xl font-bold uppercase tracking-wider mb-4 text-center">
+          {/* Left: 3-Axis Proficiency */}
+          <div className="border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-5">
+              Axis Proficiency
+            </h3>
+            <div className="space-y-5">
+              {[
+                { label: "Technical", value: proficiency.tech, color: "#06b6d4" },
+                { label: "Academic", value: proficiency.acad, color: "#a855f7" },
+                { label: "Market", value: proficiency.biz, color: "#f59e0b" },
+              ].map((axis) => (
+                <div key={axis.label}>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-sm font-bold uppercase tracking-wider">
+                      {axis.label}
+                    </span>
+                    <span className="text-base font-black font-mono">{axis.value}%</span>
+                  </div>
+                  <div className="w-full h-5 bg-gray-50 border-2 border-black overflow-hidden relative">
+                    {/* Background grid pattern for empty space */}
+                    <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '8px 8px' }}></div>
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${axis.value}%` }}
+                      transition={{ delay: 0.5, duration: 0.8, ease: "easeOut" }}
+                      className="h-full border-r-2 border-black"
+                      style={{ backgroundColor: axis.color }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Downloadable Sticker */}
+          <div className="border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-4 self-start flex items-center gap-2 text-black">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-orange-500">
+                <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.177A7.547 7.547 0 016.648 6.61a.75.75 0 00-1.152.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" clipRule="evenodd" />
+              </svg>
+              Sticker Roast
+            </h3>
+
+            {/* Sticker Card (captured by html2canvas) */}
+            <div
+              ref={stickerRef}
+              className="w-56 bg-white border-2 border-black p-4 flex flex-col items-center gap-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.15)]"
+            >
+              {/* Jury Avatar */}
+              <div
+                className={`w-24 h-24 rounded-full ${stickerJury.bgColor} border-2 border-black overflow-hidden flex items-center justify-center`}
+              >
+                <img
+                  src={stickerJury.imagePath}
+                  alt={stickerJury.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.parentElement!.innerHTML = `<span class="text-3xl font-bold text-black">${stickerJury.name[0]}</span>`;
+                  }}
+                />
+              </div>
+
+              {/* Caption */}
+              <p className="text-center text-sm font-bold leading-tight">
+                "{stickerCaption}"
+              </p>
+
+              {/* Latexo watermark */}
+              <div className="flex items-center gap-1.5 opacity-40">
+                <NextImage
+                  src="/images/favicon.jpeg"
+                  alt="Latexo"
+                  width={12}
+                  height={12}
+                  className="rounded-full"
+                />
+                <span className="text-[8px] font-bold uppercase tracking-widest">
+                  Latexo
+                </span>
+              </div>
+            </div>
+
+            {/* Download Button */}
+            <button
+              onClick={handleDownloadSticker}
+              disabled={downloading}
+              className="mt-6 w-full border-2 border-black py-3 text-xs font-black uppercase tracking-widest hover:bg-black hover:text-white transition-all active:translate-y-1 active:shadow-none hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50"
+            >
+              {downloading ? "Generating..." : "↓ Download Sticker"}
+            </button>
+          </div>
+        </motion.div>
+
+        {/* ══════════════════════════════════════════════════════
+            SECTION 3 — Jury Feedback & Tips
+            ══════════════════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+        >
+          <h3 className="text-xs font-bold uppercase tracking-widest p-6 pb-0">
             Jury Feedback
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {JURY_MEMBERS.map((member, index) => (
-              <motion.div
-                key={member.name}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7 + index * 0.1 }}
-                className="border-2 border-black p-4 bg-white"
-              >
-                {/* Avatar */}
-                <div className="flex flex-col items-center mb-4">
+
+          <div className="divide-y divide-gray-200">
+            {JURY_MEMBERS.map((member, index) => {
+              const fb = simulation.feedback?.[member.key];
+              const comment =
+                fb?.comment ||
+                simulation.jury_feedback?.[member.legacyKey] ||
+                "No feedback available.";
+              const tip = fb?.tip || "Keep practicing.";
+
+              return (
+                <motion.div
+                  key={member.name}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5 + index * 0.1 }}
+                  className="p-6 flex gap-4"
+                >
+                  {/* Avatar */}
                   <div
-                    className={`w-24 h-24 rounded-full ${member.bgColor} border-2 border-black flex items-center justify-center overflow-hidden mb-2`}
+                    className={`w-12 h-12 rounded-full ${member.bgColor} border border-black shrink-0 overflow-hidden flex items-center justify-center`}
                   >
                     <img
                       src={member.imagePath}
@@ -298,44 +450,33 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.currentTarget.style.display = "none";
-                        e.currentTarget.parentElement!.innerHTML = `<span class="text-3xl font-bold">${member.name[0]}</span>`;
+                        e.currentTarget.parentElement!.innerHTML = `<span class="text-lg font-bold">${member.name[0]}</span>`;
                       }}
                     />
                   </div>
-                  <div className="font-bold text-sm uppercase tracking-wider">
-                    {member.name}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-sm font-bold">{member.name}</span>
+                      <span className="text-[10px] text-gray-400 uppercase tracking-wider">
+                        {member.title}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700 mb-2 italic border-l-2 border-gray-300 pl-3">
+                      "{comment}"
+                    </p>
+                    <div className="bg-gray-50 border-l-2 border-black px-3 py-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-0.5">
+                        Tip
+                      </span>
+                      <p className="text-xs text-gray-600">{tip}</p>
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-600">{member.title}</div>
-                </div>
-
-                {/* Quote */}
-                <div className="bg-gray-50 border-l-4 border-black p-3 text-sm text-gray-700">
-                  "{simulation.jury_feedback[member.quoteKey]}"
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
-        </motion.div>
-
-        {/* Download Survivor Card */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="text-center pt-8 border-t-2 border-black"
-        >
-          <button
-            onClick={handleDownloadCard}
-            disabled={downloadingCard}
-            className="bg-black text-white px-8 py-4 font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {downloadingCard
-              ? "Generating..."
-              : "📸 Download for Instagram"}
-          </button>
-          <p className="text-xs text-gray-600 mt-2">
-            Share your achievement on social media
-          </p>
         </motion.div>
       </div>
     </div>

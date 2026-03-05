@@ -288,9 +288,8 @@ export default function OnboardingPage() {
           throw new Error('Not authenticated');
         }
         
-        // Generate DiceBear avatar URL (random seed)
-        const avatarSeed = `${user.id}-${Date.now()}`;
-        const avatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${avatarSeed}`;
+        // Use user's Google avatar if available
+        const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
         
         // Update profile
         const { error } = await supabase

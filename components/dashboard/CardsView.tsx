@@ -1,7 +1,9 @@
 "use client";
 
-import { GoldenFrame } from "@/components/dashboard/GoldenFrame";
+import { ReportFrame } from "@/components/dashboard/ReportFrame";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
+import Image from "next/image";
+import { Clock } from "lucide-react";
 
 interface Report {
   id: string;
@@ -38,21 +40,41 @@ export function CardsView({
     <div className="flex flex-col h-auto md:h-[calc(100vh-200px)]">
       {/* Header Section */}
       <header className="flex flex-col md:flex-row justify-between items-center md:items-start w-full mb-4 gap-4 px-2">
-        {/* Left: Welcome & Quote */}
-        <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-2 max-w-2xl w-full">
-          <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight">
-            {dynamicGreeting}, {profile?.full_name?.split(' ')[0] || 'Scholar'}
-          </h1>
-          <div className="bg-gray-50 border border-gray-100 px-4 py-2 italic text-gray-600 font-serif border-l-4 border-l-black text-xs md:text-sm">
-            "{dynamicQuote}"
+        {/* Left: Supervisor Avatar & Welcome & Quote */}
+        <div className="flex items-center md:items-start gap-4 text-center md:text-left max-w-2xl w-full">
+          {/* Supervisor Avatar Image */}
+          <div className="w-12 h-12 md:w-16 md:h-16 shrink-0 border-[3px] border-black rounded-full overflow-hidden bg-white shadow-[4px_4px_0px_#000000]">
+            <Image 
+              src="/jury/supervisor.png" 
+              alt="Supervisor" 
+              width={64} 
+              height={64} 
+              className="w-full h-full object-cover"
+              priority
+            />
+          </div>
+          <div className="flex flex-col space-y-1">
+            <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase">
+              {dynamicGreeting}, {profile?.full_name?.split(' ')[0] || 'Scholar'}
+            </h1>
+            <div className="bg-gray-50 border border-gray-100 px-3 py-1.5 italic text-gray-600 font-serif border-l-4 border-l-black text-xs">
+              "{dynamicQuote}"
+            </div>
           </div>
         </div>
 
-        {/* Right: Countdown */}
+        {/* Right: Brutalist Countdown Timer */}
         {daysUntilDefense > 0 && (
-          <div className="bg-black text-white px-4 py-2 shadow-[6px_6px_0px_0px_rgba(0,0,0,0.1)] border border-black w-full md:w-auto text-center md:text-left">
-            <span className="block text-[10px] uppercase tracking-widest text-gray-400 mb-0.5">{t('welcome.defense_in')}</span>
-            <span className="font-mono text-xl md:text-2xl font-bold">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span>
+          <div className="flex flex-col items-end">
+            <div className="bg-white border-[3px] border-black p-2 md:p-3 shadow-[4px_4px_0px_#000000] flex items-center gap-3">
+              <div className="hidden md:flex flex-col items-end">
+                <p className="text-[10px] text-gray-500 uppercase font-bold tracking-[0.2em]">{t('welcome.defense_in')}</p>
+              </div>
+              <div className="flex items-center gap-2 bg-black text-white px-3 py-1.5">
+                <Clock className="w-4 h-4 text-yellow-400" />
+                <span className="text-lg md:text-xl font-black font-mono tracking-widest">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span>
+              </div>
+            </div>
           </div>
         )}
       </header>
@@ -61,7 +83,7 @@ export function CardsView({
       <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
         {/* Left Column: Artifact (Golden Frame) */}
         <div className="w-full flex justify-center md:justify-center p-2">
-          <GoldenFrame 
+          <ReportFrame 
             isEmpty={!activeReport}
             thumbnailUrl={activeReport?.thumbnail_url}
             onUploadClick={onUploadClick}

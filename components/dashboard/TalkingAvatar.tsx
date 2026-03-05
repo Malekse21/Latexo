@@ -8,6 +8,8 @@ interface TalkingAvatarProps {
   imagePath: string;
   bgColor: string;
   isSpeaking: boolean;
+  isInactive?: boolean;
+  isThinking?: boolean;
   size?: "small" | "medium" | "large";
 }
 
@@ -16,6 +18,8 @@ export function TalkingAvatar({
   imagePath,
   bgColor,
   isSpeaking,
+  isInactive = false,
+  isThinking = false,
   size = "medium",
 }: TalkingAvatarProps) {
   const sizeClasses = {
@@ -58,7 +62,9 @@ export function TalkingAvatar({
                 damping: 20,
               }
         }
-        className={`${sizeClasses[size]} rounded-full ${bgColor} border-4 border-black shadow-lg flex items-center justify-center overflow-hidden relative`}
+        className={`${sizeClasses[size]} rounded-full ${bgColor} border-4 border-black shadow-lg flex items-center justify-center overflow-hidden relative transition-all duration-500 ${
+          isInactive ? "opacity-40 grayscale-[50%]" : ""
+        } ${isSpeaking ? "ring-4 ring-offset-2 ring-black" : ""}`}
       >
         {/* Avatar Image */}
         <Image
@@ -100,6 +106,31 @@ export function TalkingAvatar({
                   ease: "easeInOut",
                 }}
                 className="w-1 bg-black rounded-full"
+              />
+            ))}
+          </motion.div>
+        )}
+
+        {/* Thinking Indicator (appears when AI is processing) */}
+        {isThinking && !isSpeaking && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex gap-1 bg-white/80 px-2 py-1 rounded-full border border-black shadow-sm"
+          >
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  y: [0, -3, 0],
+                }}
+                transition={{
+                  duration: 0.6,
+                  repeat: Infinity,
+                  delay: i * 0.15,
+                  ease: "easeInOut",
+                }}
+                className="w-1.5 h-1.5 bg-black rounded-full"
               />
             ))}
           </motion.div>
