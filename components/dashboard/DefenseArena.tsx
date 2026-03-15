@@ -1259,12 +1259,12 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
           >
             <div className="max-w-3xl w-full">
               <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-3xl font-semibold font-serif text-gray-900 tracking-tight">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+                  <h2 className="text-2xl md:text-3xl font-semibold font-serif text-gray-900 tracking-tight">
                     {t('simulation.setup')}
                   </h2>
                   {liveSimulations > 0 && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] font-bold uppercase tracking-widest text-black">
+                    <div className="flex items-center shrink-0 gap-2 px-3 py-1.5 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] md:text-xs font-bold uppercase tracking-widest text-black">
                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
                       {liveSimulations} {language === 'fr' ? 'Simulations Actives' : 'Active Simulations'}
                     </div>
