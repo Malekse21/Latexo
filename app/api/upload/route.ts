@@ -2,6 +2,60 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { deleteUserReports } from '@/lib/supabase/cleanup';
 
+/**
+ * Strips boilerplate pages (cover, acknowledgments, TOC, list of figures)
+ * from extracted PFE text. Keeps only the real content between
+ * "Introduction générale" / "Chapitre 1" and "Conclusion générale" / "Bibliographie".
+ */
+function cleanBoilerplate(raw: string): string {
+  let text = raw;
+
+  // ── Find the start of actual content ──
+  const startPatterns = [
+    /introduction\s+g[eé]n[eé]rale/i,
+    /chapitre\s+1/i,
+    /pr[eé]sentation\s+du\s+projet/i,
+  ];
+
+  let startIndex = -1;
+  for (const pattern of startPatterns) {
+    const match = text.search(pattern);
+    if (match !== -1) {
+      startIndex = match;
+      break;
+    }
+  }
+
+  // ── Find the end of actual content ──
+  const endPatterns = [
+    /bibliographie/i,
+    /webographie/i,
+    /r[eé]f[eé]rences/i,
+    /annexe/i,
+  ];
+
+  let endIndex = -1;
+  for (const pattern of endPatterns) {
+    const match = text.search(pattern);
+    if (match !== -1) {
+      endIndex = match;
+      break;
+    }
+  }
+
+  // Slice
+  if (startIndex > 0) {
+    text = text.substring(startIndex);
+  }
+  if (endIndex > startIndex) {
+    // Keep some chars after the end anchor to capture the conclusion text
+    const adjustedEnd = (endIndex - (startIndex > 0 ? startIndex : 0)) + 3000;
+    text = text.substring(0, Math.min(adjustedEnd, text.length));
+  }
+
+  return text.trim();
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -200,7 +254,7 @@ export async function POST(request: NextRequest) {
         status: 'completed', 
         data: {},
         detected_language: (request as any).detectedLang || 'english',
-        extracted_text: extractedText.trim()
+        extracted_text: cleanBoilerplate(extractedText).trim()
       })
       .select()
       .single();

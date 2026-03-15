@@ -71,11 +71,11 @@ export async function updateSession(request: NextRequest) {
     // Fetch profile to check onboarding status
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name')
+      .select('university')
       .eq('id', user.id)
       .single()
       
-    const isProfileComplete = profile && profile.full_name
+    const isProfileComplete = profile && profile.university
 
     // 1. If hitting login/signup OR root, redirect to appropriate start page
     if (isAuthRoute || isRootRoute) {

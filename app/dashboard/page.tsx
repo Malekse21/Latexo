@@ -31,29 +31,6 @@ interface Report {
   data?: any;
 }
 
-const QUOTES = [
-  "Research is seeing what everybody else has seen and thinking what nobody else has thought.",
-  "The beautiful thing about learning is that no one can take it away from you.",
-  "Success is not final, failure is not fatal: it is the courage to continue that counts.",
-  "The only way to do great work is to love what you do.",
-  "Science is a way of thinking much more than it is a body of knowledge.",
-  "An investment in knowledge pays the best interest.",
-  "Education is the most powerful weapon which you can use to change the world.",
-  "The higher we are placed, the more humbly we should walk.",
-  "Data! Data! Data! I can't make bricks without clay.",
-  "In the middle of difficulty lies opportunity."
-];
-
-const GREETINGS = [
-  "Welcome back",
-  "Greetings",
-  "Back at it",
-  "Ready for more",
-  "The stage is yours",
-  "Eyes on the prize",
-  "Knowledge awaits"
-];
-
 function DashboardContent() {
   const { profile, refreshProfile, t, language } = useUser();
   const [activeTab, setActiveTab] = useState<Tab>(null);
@@ -62,9 +39,12 @@ function DashboardContent() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const { setSelectedReport } = useAppStore();
   
-  const [dynamicQuote, setDynamicQuote] = useState("");
   const [dynamicGreeting, setDynamicGreeting] = useState("");
   const [simulationId, setSimulationId] = useState<string | null>(null);
+  const [readinessScore, setReadinessScore] = useState<number | null>(null);
+  const [projectedScore, setProjectedScore] = useState<number | null>(null);
+  const [lastGrade, setLastGrade] = useState<number | null>(null);
+  const [pastQuestion, setPastQuestion] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -87,15 +67,135 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    // Refresh profile state globally on mount (e.g., when returning from Leaderboard)
+    refreshProfile();
+    
     fetchActiveReport();
-    setDynamicQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
-    const greetings = t('dashboard.greetings');
-    if (Array.isArray(greetings)) {
-      setDynamicGreeting(greetings[Math.floor(Math.random() * greetings.length)]);
+    fetchReadinessData();
+    
+    // Time-based greeting logic
+    const hour = new Date().getHours();
+    let greetingKey = 'dashboard.greetings.morning';
+    if (hour >= 12 && hour < 18) {
+      greetingKey = 'dashboard.greetings.afternoon';
+    } else if (hour >= 18) {
+      greetingKey = 'dashboard.greetings.evening';
+    }
+    
+    // Fallback if translations don't exist
+    const localizedGreeting = t(greetingKey);
+    if (localizedGreeting !== greetingKey) {
+       setDynamicGreeting(localizedGreeting);
     } else {
-      setDynamicGreeting("Welcome back");
+       if (hour >= 12 && hour < 18) {
+         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good afternoon');
+       } else if (hour >= 18) {
+         setDynamicGreeting(language === 'fr' ? 'Bonsoir' : 'Good evening');
+       } else {
+         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
+       }
     }
   }, [profile?.active_report_id, language]);
+
+  // ─── Readiness Score helpers ───────────────────────────────────
+  const getSessionVolume = (sessions: number): number => {
+    // sessions 3-8: micro increments from 35 → 100
+    const capped = Math.min(sessions, 8);
+    const remaining = capped - 2; // 1-6
+    return 35 + (remaining / 6) * 65;
+  };
+
+  const getRecencyScore = (daysSinceLast: number): number => {
+    if (daysSinceLast <= 2) return 100;
+    if (daysSinceLast <= 5) return 70;
+    if (daysSinceLast <= 9) return 40;
+    return 10;
+  };
+
+  const computeReadiness = (avgScoreNorm: number, sessionVol: number, recency: number) => {
+    return Math.round(avgScoreNorm * 0.50 + sessionVol * 0.35 + recency * 0.15);
+  };
+
+  const fetchReadinessData = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const totalSessions = profile?.total_sessions || 0;
+      const lastSession = profile?.last_session;
+
+      // Sessions 0-2: fixed readiness values, no formula needed
+      if (totalSessions === 0) {
+        setReadinessScore(0);
+        setProjectedScore(20);
+        return;
+      }
+      if (totalSessions === 1) {
+        setReadinessScore(20);
+        setProjectedScore(35);
+        return;
+      }
+      if (totalSessions === 2) {
+        setReadinessScore(35);
+        // Project what session 3 would give with the formula
+        const { data: recentSims } = await supabase
+          .from('simulations')
+          .select('final_grade, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        let avgScoreNorm = 0;
+        if (recentSims && recentSims.length > 0) {
+          const avg = recentSims.reduce((sum: number, s: any) => sum + (s.final_grade || 0), 0) / recentSims.length;
+          avgScoreNorm = (avg / 20) * 100;
+        }
+        const proj = computeReadiness(avgScoreNorm, getSessionVolume(3), 100);
+        setProjectedScore(proj);
+        return;
+      }
+
+      // Session 3+: use the full formula
+      const { data: recentSims } = await supabase
+        .from('simulations')
+        .select('final_grade, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      // Avg Score (last 3, normalized to 100)
+      let avgScoreNorm = 0;
+      if (recentSims && recentSims.length > 0) {
+        const avg = recentSims.reduce((sum: number, s: any) => sum + (s.final_grade || 0), 0) / recentSims.length;
+        avgScoreNorm = (avg / 20) * 100;
+      }
+
+      // Session Volume (micro gains from 35 → 100)
+      const sessionVol = getSessionVolume(totalSessions);
+
+      // Recency
+      let recency = 10;
+      if (lastSession) {
+        const daysSince = Math.floor((Date.now() - new Date(lastSession).getTime()) / (1000 * 60 * 60 * 24));
+        recency = getRecencyScore(daysSince);
+      }
+
+      const score = computeReadiness(avgScoreNorm, sessionVol, recency);
+      setReadinessScore(score);
+
+      // Projected: simulate today → recency = 100, session +1
+      const projSessionVol = getSessionVolume(totalSessions + 1);
+      const proj = computeReadiness(avgScoreNorm, projSessionVol, 100);
+      setProjectedScore(proj);
+
+      // Last grade (most recent simulation)
+      if (recentSims && recentSims.length > 0) {
+        setLastGrade(recentSims[0].final_grade);
+      }
+    } catch (error) {
+      console.error('Error fetching readiness data:', error);
+    }
+  };
 
   const fetchActiveReport = async () => {
     try {
@@ -134,6 +234,12 @@ function DashboardContent() {
         
         setActiveReport({ ...reportData, language });
         setSelectedReport({ ...reportData, language });
+
+        // Pick a random past question from this report
+        const questions: string[] = reportData.past_questions || [];
+        if (questions.length > 0) {
+          setPastQuestion(questions[Math.floor(Math.random() * questions.length)]);
+        }
       }
     } catch (error) {
       console.error('Error fetching report:', error);
@@ -179,10 +285,14 @@ function DashboardContent() {
           <CardsView 
             profile={profile}
             activeReport={activeReport}
-            dynamicGreeting={dynamicGreeting}
-            dynamicQuote={dynamicQuote}
+            greeting={dynamicGreeting}
             daysUntilDefense={daysUntilDefense}
+            readinessScore={readinessScore}
+            projectedScore={projectedScore}
+            lastGrade={lastGrade}
+            pastQuestion={pastQuestion}
             onUploadClick={() => setShowUploadModal(true)}
+            onNavigateToDefense={() => handleTabChange('defense')}
             t={t}
           />
         )}

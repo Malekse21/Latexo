@@ -262,7 +262,6 @@ async function selectNextQuestion(
     session.questionsAskedTexts,
     agentId,
     session.pdfContext,
-    session.weakTopics
   );
 
   // Store extras for upcoming turns

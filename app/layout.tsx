@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { EB_Garamond } from "next/font/google";
+import { Inter, STIX_Two_Text } from "next/font/google";
 import "./globals.css";
 import { UserProvider } from "@/lib/context/user-context";
 import NextTopLoader from "nextjs-toploader";
 
-const ebGaramond = EB_Garamond({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const stixTwoText = STIX_Two_Text({ subsets: ["latin"], variable: "--font-latex" });
 
 export const metadata: Metadata = {
   title: "Latexo - Your PFE, Perfected",
@@ -20,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${ebGaramond.className} antialiased bg-dot-grid`}>
+    <html lang="en" className={`${inter.variable} ${stixTwoText.variable}`}>
+      <body className={`${inter.className} antialiased font-sans text-gray-900 bg-gray-50`}>
         <NextTopLoader
           color="#000000"
           initialPosition={0.08}

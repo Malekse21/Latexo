@@ -1,6 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+/**
+ * Strips boilerplate pages (cover, acknowledgments, TOC, list of figures)
+ * from extracted PFE text.
+ */
+function cleanBoilerplate(raw: string): string {
+  let text = raw;
+
+  const startPatterns = [
+    /introduction\s+g[eé]n[eé]rale/i,
+    /chapitre\s+1/i,
+    /pr[eé]sentation\s+du\s+projet/i,
+  ];
+
+  let startIndex = -1;
+  for (const pattern of startPatterns) {
+    const match = text.search(pattern);
+    if (match !== -1) {
+      startIndex = match;
+      break;
+    }
+  }
+
+  const endPatterns = [
+    /bibliographie/i,
+    /webographie/i,
+    /r[eé]f[eé]rences/i,
+    /annexe/i,
+  ];
+
+  let endIndex = -1;
+  for (const pattern of endPatterns) {
+    const match = text.search(pattern);
+    if (match !== -1) {
+      endIndex = match;
+      break;
+    }
+  }
+
+  if (startIndex > 0) {
+    text = text.substring(startIndex);
+  }
+  if (endIndex > startIndex) {
+    const adjustedEnd = (endIndex - (startIndex > 0 ? startIndex : 0)) + 3000;
+    text = text.substring(0, Math.min(adjustedEnd, text.length));
+  }
+
+  return text.trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -141,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      text: extractedText.trim(),
+      text: cleanBoilerplate(extractedText).trim(),
       fileType: fileName.endsWith(".pdf") ? "pdf" : "docx",
       fileName: file.name,
       detectedLanguage: detectedLang,

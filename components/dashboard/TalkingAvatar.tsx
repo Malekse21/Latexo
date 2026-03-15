@@ -23,15 +23,15 @@ export function TalkingAvatar({
   size = "medium",
 }: TalkingAvatarProps) {
   const sizeClasses = {
-    small: "w-16 h-16",
-    medium: "w-24 h-24",
-    large: "w-32 h-32",
+    small: "w-12 h-12 md:w-16 md:h-16",
+    medium: "w-16 h-16 md:w-24 md:h-24",
+    large: "w-24 h-24 md:w-32 md:h-32",
   };
 
   const nameSizeClasses = {
-    small: "text-2xl",
-    medium: "text-4xl",
-    large: "text-5xl",
+    small: "text-xl md:text-2xl",
+    medium: "text-2xl md:text-4xl",
+    large: "text-3xl md:text-5xl",
   };
 
   return (

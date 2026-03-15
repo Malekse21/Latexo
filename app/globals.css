@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-latex), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -69,9 +72,9 @@
 
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 0 0% 0%;
+    --ring: 240 5.9% 90%;
 
-    --radius: 0px;
+    --radius: 0.75rem;
   }
 }
 

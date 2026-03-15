@@ -41,7 +41,7 @@ export async function generateMoreQuestions(
   askedTexts: string[],
   agentId: AgentId,
   pdfContext: PdfContext,
-  weakTopics: string[]
+  weakTopics: string[] = []
 ): Promise<string[]> {
 
   const agent = AGENTS[agentId];

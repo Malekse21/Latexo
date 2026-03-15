@@ -5,12 +5,12 @@ import NextImage from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/lib/context/user-context";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, AlertTriangle, X, Shield, Swords, Flame, Mic, Square, ArrowRight } from "lucide-react";
+import { Loader2, AlertTriangle, X, Shield, Swords, Flame, Mic, Square, ArrowRight, Lock, Chrome } from "lucide-react";
 
 import { TalkingAvatar } from "@/components/dashboard/TalkingAvatar";
 import { VoiceWaveform } from "@/components/dashboard/VoiceWaveform";
 import { MicrophoneButton } from "@/components/dashboard/MicrophoneButton";
-import { AudioRecorder, playAudioBase64, transcribeAudio } from "@/lib/voice/audioRecorder";
+
 
 // Helper: play a simple synthesized beep or click
 const playSoundEffect = (type: 'pop' | 'click' | 'chime') => {
@@ -148,6 +148,9 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Transcript tracking for evaluation
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const messagesRef = useRef<TranscriptMessage[]>([]);
+  const closingPhaseRef = useRef<() => void>(() => {});
+  const isClosingRef = useRef(false);
+  const isEvaluatingRef = useRef(false);
   const [sessionStartTime, setSessionStartTime] = useState(0);
   const [isEvaluating, setIsEvaluating] = useState(false);
 
@@ -163,6 +166,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [initialData, setInitialData] = useState<any>(null);
   const [evaluationResults, setEvaluationResults] = useState<any>(null);
 
+  // Fallback STT State
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+
   // Loading phase enhancements
   const [loadingTickerIndex, setLoadingTickerIndex] = useState(0);
   const [reportName, setReportName] = useState<string | null>(null);
@@ -174,11 +182,146 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [isChrome, setIsChrome] = useState(true);
   const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [liveSimulations, setLiveSimulations] = useState(0);
+
+  // Silence counter state
+  const [lastJurySpeaker, setLastJurySpeaker] = useState<ActiveSpeaker>(null);
+  const [silenceSeconds, setSilenceSeconds] = useState(0);
+  const [juryBubbleMessage, setJuryBubbleMessage] = useState<string | null>(null);
+  const silenceThresholdsRef = useRef({ gentle: 0, gentleHide: 0, impatient: 0, impatientHide: 0 });
+
+  // SFX & ambiance state
+  const [sfxEvent, setSfxEvent] = useState<{ juror: ActiveSpeaker; emoji: string } | null>(null);
+  const ambianceRef = useRef<HTMLAudioElement | null>(null);
+
+  // Track the last jury speaker so we know who to show the bubble on
+  useEffect(() => {
+    if (activeSpeaker === 'technical' || activeSpeaker === 'academic' || activeSpeaker === 'business') {
+      setLastJurySpeaker(activeSpeaker);
+    }
+  }, [activeSpeaker]);
+
+  // Silence counter: ticks every second when it's the student's turn and they're idle
+  useEffect(() => {
+    const isStudentTurn = phase === 'arena' && !isRecording && !isAISpeaking && !isProcessingAudio && !isPaused;
+
+    if (!isStudentTurn) {
+      // Reset silence when someone is active
+      setSilenceSeconds(0);
+      setJuryBubbleMessage(null);
+      // Randomize thresholds for the 4-event cycle:
+      // gentleShow → gentleHide (2-3s visible) → gap (7s) → impatientShow → impatientHide (2-3s visible)
+      const g = Math.floor(Math.random() * 3) + 3;             // show gentle at 3-5s
+      const gDur = Math.floor(Math.random() * 2) + 2;          // visible for 2-3s
+      const iShow = g + gDur + 7;                               // show impatient 7s after gentle hides
+      const iDur = Math.floor(Math.random() * 2) + 2;          // visible for 2-3s
+      silenceThresholdsRef.current = {
+        gentle: g,
+        gentleHide: g + gDur,
+        impatient: iShow,
+        impatientHide: iShow + iDur,
+      };
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setSilenceSeconds(prev => {
+        const next = prev + 1;
+        const { gentle, gentleHide, impatient, impatientHide } = silenceThresholdsRef.current;
+
+        if (next === gentle) {
+          const msgs = config.language === 'french'
+            ? ["Prenez votre temps.", "Pas de pression.", "Réfléchissez bien."]
+            : ["Take your time.", "No rush.", "Think it through."];
+          setJuryBubbleMessage(msgs[Math.floor(Math.random() * msgs.length)]);
+        } else if (next === gentleHide) {
+          setJuryBubbleMessage(null);
+        } else if (next === impatient) {
+          const msgs = config.language === 'french'
+            ? ["On n'a pas toute la journée.", "Le temps presse, allez-y.", "Il faudrait se décider."]
+            : ["We don't have all day.", "Time is ticking.", "We're still waiting."];
+          setJuryBubbleMessage(msgs[Math.floor(Math.random() * msgs.length)]);
+        } else if (next === impatientHide) {
+          setJuryBubbleMessage(null);
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [phase, isRecording, isAISpeaking, isProcessingAudio, isPaused, config.language]);
+
+  // Background ambiance loop — plays at very low volume during the arena phase
+  useEffect(() => {
+    if (phase === 'arena' && !isPaused) {
+      if (!ambianceRef.current) {
+        const audio = new Audio('/sounds/ambiance-background.mp3');
+        audio.loop = true;
+        audio.volume = 0.09;
+        ambianceRef.current = audio;
+      }
+      ambianceRef.current.play().catch(() => {});
+    } else {
+      if (ambianceRef.current) {
+        ambianceRef.current.pause();
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (ambianceRef.current && phase !== 'arena') {
+        ambianceRef.current.pause();
+        ambianceRef.current = null;
+      }
+    };
+  }, [phase, isPaused]);
+
+  // Random SFX events — occasional cough, sneeze, or paper from a random juror
+  useEffect(() => {
+    if (phase !== 'arena' || isPaused) return;
+
+    const SFX_POOL: { file: string; emoji: string }[] = [
+      { file: '/sounds/cough.mp3', emoji: '😷' },
+      { file: '/sounds/sneeze.mp3', emoji: '🤧' },
+      { file: '/sounds/writing.mp3', emoji: '✍️' },
+      { file: '/sounds/typing.mp3', emoji: '💻' },
+      { file: '/sounds/chair.mp3', emoji: '🪑' },
+    ];
+    const JUROR_KEYS: ActiveSpeaker[] = ['technical', 'academic', 'business'];
+
+    const interval = setInterval(() => {
+      // ~20% chance every 10s
+      if (Math.random() > 0.20) return;
+
+      const sfx = SFX_POOL[Math.floor(Math.random() * SFX_POOL.length)];
+      // Pick a random juror that is NOT currently the active speaker
+      const available = JUROR_KEYS.filter(k => k !== activeSpeaker);
+      const juror = available[Math.floor(Math.random() * available.length)];
+
+      // Play the sound
+      const audio = new Audio(sfx.file);
+      audio.volume = 0.25;
+      audio.play().catch(() => {});
+
+      // Show the emoji bubble
+      setSfxEvent({ juror, emoji: sfx.emoji });
+      setTimeout(() => setSfxEvent(null), 2000);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [phase, isPaused, activeSpeaker]);
+
+  useEffect(() => {
+    // Random number between 12 and 42 for a realistic "live simulations" count
+    setLiveSimulations(Math.floor(Math.random() * 31) + 12);
+  }, []);
 
   // Full state reset — returns everything to initial values so user can start a new simulation without reloading
   const resetSimulation = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     if (recognition) recognition.stop();
+    isClosingRef.current = false;
+    isEvaluatingRef.current = false;
     setPhase("config");
     setMessages([]);
     setTranscript(t('common.loading'));
@@ -200,6 +343,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     setShowConfirmModal(false);
     setShowEndConfirmModal(false);
     setIsPaused(false);
+    setLastJurySpeaker(null);
+    setSilenceSeconds(0);
+    setJuryBubbleMessage(null);
+    setSfxEvent(null);
+    if (ambianceRef.current) {
+      ambianceRef.current.pause();
+      ambianceRef.current = null;
+    }
   };
 
   // Detect browser on mount
@@ -231,13 +382,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   }, [phase, isRecording, isProcessingAudio, isAISpeaking, recognition, messages]);
 
   // Cycle loading messages — step 0=intro, 1/2/3=jury members, 4=ready to transition
+  // Caps at step 3 (last jury card). Step 4 is set by a separate effect once initialData is ready.
   useEffect(() => {
     if (phase === "loading") {
       const interval = setInterval(() => {
         setLoadingStep((prev) => {
-          if (prev >= 4) {
+          if (prev >= 3) {
             clearInterval(interval);
-            return prev;
+            return prev; // Stay at 3 — don't go to 4 yet
           }
           return prev + 1;
         });
@@ -247,6 +399,15 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       setLoadingStep(0);
     }
   }, [phase]);
+
+  // Only advance to step 4 (trigger arena transition) when initialData is ready AND all jury cards have been shown
+  useEffect(() => {
+    if (phase === "loading" && loadingStep === 3 && initialData) {
+      // the last jury card is visible for at least 2.5s (matching the interval of previous jurors)
+      const timer = setTimeout(() => setLoadingStep(4), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [phase, loadingStep, initialData]);
 
   // Cycle loading ticker messages
   useEffect(() => {
@@ -306,9 +467,10 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   }, [phase, timeRemaining, isPaused]);
 
   // Handle timer reaching zero (separate effect to avoid stale closures)
+  // Uses closingPhaseRef so the effect always calls the LATEST version of handleClosingPhase
   useEffect(() => {
     if (phase === "arena" && timeRemaining === 0) {
-      handleClosingPhase();
+      closingPhaseRef.current();
     }
   }, [timeRemaining, phase]);
 
@@ -343,30 +505,58 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Transition to Arena when ready (step 4 = all jury shown, safe to proceed)
   useEffect(() => {
     if (phase === "loading" && loadingStep === 4 && initialData) {
-      const { firstJuryMessage } = initialData;
+      const { firstJuryMessage, sessionFirstQuestion, sessionAgentId } = initialData;
 
       // Start Arena
       setTimeRemaining(config.duration * 60);
       setSessionStartTime(Date.now());
       setPhase("arena");
+
+      // Determine the first dynamic question's speaker
+      const AGENT_TO_SPEAKER: Record<number, "technical" | "academic" | "business"> = {
+        0: "technical",
+        1: "academic",
+        2: "business",
+      };
+      const questionSpeaker = AGENT_TO_SPEAKER[sessionAgentId] || "technical";
       
-      // Add first message
-      const initialMessage: TranscriptMessage = {
+      // Add the greeting message
+      const greetingMessage: TranscriptMessage = {
         speaker: firstJuryMessage.speaker,
         text: firstJuryMessage.text,
         timestamp: 0,
       };
-      setMessages([initialMessage]);
+      setMessages([greetingMessage]);
       
-      // Start speaking immediately
+      // Start speaking the greeting
       setActiveSpeaker(firstJuryMessage.speaker);
       setIsAISpeaking(true);
-      typewriterEffect(firstJuryMessage.text);
+      typewriterEffect(firstJuryMessage.text, firstJuryMessage.speaker);
       
-      // Speak with voice profile
+      // After greeting finishes, immediately follow with the first dynamic question
       speakWithProfile(firstJuryMessage.text, firstJuryMessage.speaker, () => {
-        setIsAISpeaking(false);
-        setActiveSpeaker(null);
+        if (sessionFirstQuestion) {
+          // Add the first dynamic question as a distinct message
+          const questionMessage: TranscriptMessage = {
+            speaker: questionSpeaker,
+            text: sessionFirstQuestion,
+            timestamp: Date.now() - (config.duration * 60 * 1000),
+          };
+          setMessages(prev => [...prev, questionMessage]);
+
+          // Speak the first question
+          setActiveSpeaker(questionSpeaker);
+          setIsAISpeaking(true);
+          typewriterEffect(sessionFirstQuestion, questionSpeaker);
+
+          speakWithProfile(sessionFirstQuestion, questionSpeaker, () => {
+            setIsAISpeaking(false);
+            setActiveSpeaker(null);
+          });
+        } else {
+          setIsAISpeaking(false);
+          setActiveSpeaker(null);
+        }
       });
       
       // Clear initial data to prevent re-triggering
@@ -431,25 +621,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
 
   const handleInitialize = async () => {
-    if (!profile || profile.credits < 30) {
-      alert("Insufficient credits. You need 30 credits to start a simulation.");
+    if (!profile || profile.credits < 8) {
+      alert("Insufficient credits to start a simulation.");
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Deduct credits
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("profiles")
-        .update({ credits: profile.credits - 30 })
-        .eq("id", profile.id);
-
-      if (error) throw error;
-
-      await refreshProfile();
-
       setPhase("loading");
 
       const finalReportId = reportId || profile?.active_report_id;
@@ -460,13 +639,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
       console.log("🚀 Initializing Simulation for ID:", finalReportId);
 
-      // Double-API Initialization
+      // Step 1: Generate skeleton + first jury greeting
       const response = await fetch("/api/simulation/initialize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reportId: finalReportId,
           selectedLanguage: config.language,
+          difficulty: config.difficulty,
         }),
       });
 
@@ -477,10 +657,38 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       }
 
       const data = await response.json();
-      setInitialData(data);
+
+      // Step 2: Create the live session (question bank, session state, credit deduction)
+      const sessionRes = await fetch("/api/sessions/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId: finalReportId,
+          durationMinutes: config.duration,
+          difficulty: config.difficulty,
+        }),
+      });
+
+      if (!sessionRes.ok) {
+        const errData = await sessionRes.json().catch(() => ({}));
+        console.error("Session Start Error:", errData);
+        throw new Error(errData.error || `Session creation failed (${sessionRes.status})`);
+      }
+
+      const sessionData = await sessionRes.json();
+      console.log("✅ Live session created:", sessionData.sessionId);
+
+      await refreshProfile();
+      // Merge session data (firstQuestion, agentId) into initialData so the transition effect can use it
+      setInitialData({
+        ...data,
+        sessionFirstQuestion: sessionData.firstQuestion,
+        sessionAgentId: sessionData.agentId,
+      });
     } catch (error) {
       console.error("Failed to initialize simulation:", error);
       alert("Failed to start simulation. Please try again.");
+      setPhase("config");
     } finally {
       setIsProcessing(false);
     }
@@ -489,6 +697,15 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Helper: speak text with jury-specific voice profile
   // Each juror gets a truly DISTINCT voice + language matching
   const speakWithProfile = (text: string, speaker: string, onDone?: () => void) => {
+    let isDone = false;
+    
+    const finish = () => {
+      if (!isDone) {
+        isDone = true;
+        if (onDone) onDone();
+      }
+    };
+
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -558,17 +775,34 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       utterance.pitch = profile.pitch;
       utterance.rate = profile.rate;
 
+      // Chrome Speech API bug workaround: Calculate rough duration + buffer
+      // Average speaking rate is ~150 words per minute (2.5 words/sec). 
+      // rate = 1 is baseline.
+      const wordCount = text.split(/\s+/).length;
+      const estimatedDurationMs = (wordCount / 2.5) * 1000 / utterance.rate;
+      const safetyTimeoutMs = estimatedDurationMs + 5000; // Add 5 seconds buffer
+
+      const safetyTimer = setTimeout(() => {
+        console.warn("SpeechSynthesis onend failed to fire. Using safety fallback.");
+        finish();
+      }, safetyTimeoutMs);
+
       utterance.onend = () => {
-        if (onDone) onDone();
+        clearTimeout(safetyTimer);
+        finish();
+      };
+      
+      utterance.onerror = (e) => {
+        console.error("SpeechSynthesis error:", e);
+        clearTimeout(safetyTimer);
+        finish();
       };
 
       window.speechSynthesis.speak(utterance);
     } else {
-      // Fallback delay
-      const delay = text.split(' ').length * 300;
-      setTimeout(() => {
-        if (onDone) onDone();
-      }, delay);
+      // Fallback delay if no API
+      const delay = text.split(/\s+/).length * 300;
+      setTimeout(finish, delay);
     }
   };
 
@@ -597,6 +831,10 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
   // Closing phase: Static farewell remark, plays sounds, then evaluates
   const handleClosingPhase = async () => {
+    // Guard against double-invocation from rapid timer ticks
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+
     // Stop any recording
     if (recognition) recognition.stop();
     if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -610,7 +848,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     playBeep(660, 150);
     setTimeout(() => playBeep(880, 200), 200);
 
-    // Give it a brief half-second pause before speaking
+    // Speak farewell (fire-and-forget — evaluation is NOT dependent on this callback)
     setTimeout(() => {
       const closingText = config.language === 'french'
         ? "Le temps est écoulé. Merci pour votre présentation, le jury va maintenant délibérer."
@@ -625,18 +863,23 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       speakWithProfile(closingText, closingSpeaker, () => {
         setIsAISpeaking(false);
         setActiveSpeaker(null);
-        
-        // Final sign-off chime before evaluation screen
-        playBeep(440, 300);
-        
-        // Auto-proceed to evaluation
-        setTimeout(() => runEvaluation(), 500);
       });
     }, 600);
+
+    // Fire evaluation after a fixed delay (enough for farewell to display)
+    // This is decoupled from the speech callback to prevent silent failures
+    setTimeout(() => runEvaluation(), 4000);
   };
+
+  // Always keep closingPhaseRef pointing to the latest handleClosingPhase
+  closingPhaseRef.current = handleClosingPhase;
 
   // Run the evaluation (called after closing remarks)
   const runEvaluation = async () => {
+    // Guard against double-evaluation
+    if (isEvaluatingRef.current) return;
+    isEvaluatingRef.current = true;
+
     setIsEvaluating(true);
     try {
       const response = await fetch("/api/simulation/evaluate", {
@@ -648,6 +891,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
           config: {
             difficulty: config.difficulty,
             language: config.language,
+            durationMinutes: config.duration,
           },
         }),
       });
@@ -660,11 +904,6 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
       const data = await response.json();
       setEvaluationResults(data);
-
-      if (onSimulationComplete) {
-        onSimulationComplete(data.simulation_id);
-      }
-
       setPhase("aftermath");
     } catch (error) {
       console.error("Failed to evaluate simulation:", error);
@@ -676,6 +915,16 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       setIsEvaluating(false);
     }
   };
+
+  // Aftermath: trigger tab switch to AftermathDashboard via proper useEffect (not IIFE in JSX)
+  useEffect(() => {
+    if (phase === 'aftermath' && evaluationResults?.simulation_id && onSimulationComplete) {
+      const timer = setTimeout(() => {
+        onSimulationComplete(evaluationResults.simulation_id);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [phase, evaluationResults]);
 
   // Manual end session button — shows confirmation modal first
   const handleEndSession = () => {
@@ -796,7 +1045,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       setIsRecording(false);
       setActiveSpeaker(null);
       
-      if (recognition) {
+      if (isChrome && recognition) {
         recognition.stop();
         // The actual submission will happen in a useEffect monitoring isRecording or similar,
         // but to keep it simple and immediate, we can just grab what we have.
@@ -817,16 +1066,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
             setTranscript("No speech detected. Please try again.");
           }
         }, 300);
+      } else if (!isChrome && mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        // The onstop handler will take care of processing
       }
     } else {
       // Start recording
       console.log("▶️ Starting recording...");
       
-      if (!recognition) {
-        alert("Speech recognition is not supported in this browser.");
-        return;
-      }
-
       try {
         playSoundEffect('pop');
         setTranscript('Listening...');
@@ -839,8 +1086,70 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
           setSessionStartTime(Date.now());
         }
 
-        recognition.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
-        recognition.start();
+        if (isChrome && recognition) {
+          recognition.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
+          recognition.start();
+        } else if (!isChrome) {
+          // Fallback: Use MediaRecorder
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunksRef.current.push(event.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            setTranscript('Transcribing audio...');
+            setIsProcessingAudio(true);
+            
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'record.webm');
+            formData.append('language', config.language);
+
+            try {
+              const res = await fetch('/api/simulation/transcribe', {
+                method: 'POST',
+                body: formData,
+              });
+              
+              if (!res.ok) throw new Error('Transcription failed');
+              const data = await res.json();
+              const text = data.text?.trim();
+
+              if (text && text.length > 0) {
+                const studentMessage: TranscriptMessage = {
+                  speaker: 'student',
+                  text: text,
+                  timestamp: Date.now() - sessionStartTime,
+                };
+                setMessages((prev) => [...prev, studentMessage]);
+                setTranscript(`You: ${text}`);
+                await handleAIResponse(text);
+              } else {
+                 setTranscript("No speech detected. Please try again.");
+              }
+            } catch (error) {
+              console.error("Transcription error:", error);
+              alert("Failed to transcribe audio. Please try again.");
+              setTranscript("Transcription failed.");
+            } finally {
+              setIsProcessingAudio(false);
+              // Stop all audio tracks
+              stream.getTracks().forEach(track => track.stop());
+            }
+          };
+
+          mediaRecorder.start();
+        } else {
+            alert("Speech recognition is not supported in this browser.");
+            setIsRecording(false);
+            setActiveSpeaker(null);
+        }
       } catch (error) {
         console.error("❌ Failed to start recording:", error);
         alert("Microphone access required or Recognition error.");
@@ -904,30 +1213,30 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-md pointer-events-auto p-6 flex flex-col items-center text-center"
+                className="bg-white border border-gray-200 rounded-2xl shadow-xl w-full max-w-md pointer-events-auto p-6 flex flex-col items-center text-center"
               >
-                <div className="w-16 h-16 rounded-full bg-yellow-100 border-2 border-black flex items-center justify-center mb-4">
-                  <AlertTriangle className="w-8 h-8 text-amber-600" />
+                <div className="w-16 h-16 rounded-full bg-yellow-50 ring-1 ring-yellow-200 flex items-center justify-center mb-4 shadow-sm">
+                  <AlertTriangle className="w-8 h-8 text-amber-500" />
                 </div>
                 
-                <h2 className="text-xl font-bold font-mono uppercase tracking-wider mb-2">
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
                   Start Simulation?
                 </h2>
                 
-                <p className="text-gray-600 text-sm mb-6">
-                  This will deduct <span className="font-bold text-black border-b-2 border-yellow-300">30 credits</span> from your balance to generate AI jury interactions and evaluations.
+                <p className="text-gray-600 text-sm mb-8 leading-relaxed">
+                  This will deduct <span className="font-semibold text-gray-900 bg-yellow-100 px-1.5 py-0.5 rounded">30 credits</span> from your balance to generate AI jury interactions and evaluations.
                 </p>
 
                 <div className="flex gap-4 w-full">
                   <button
                     onClick={() => setShowConfirmModal(false)}
-                    className="flex-1 py-3 px-4 border-2 border-gray-300 text-gray-700 font-bold uppercase tracking-widest hover:border-black hover:text-black transition-colors"
+                    className="flex-1 py-3 px-4 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={confirmAndInitialize}
-                    className="flex-1 py-3 px-4 bg-black text-white font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors"
+                    className="flex-1 py-3 px-4 bg-gray-900 rounded-xl text-white font-medium hover:bg-gray-800 shadow-sm transition-colors"
                   >
                     Confirm Start
                   </button>
@@ -950,31 +1259,39 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
           >
             <div className="max-w-3xl w-full">
               <div className="mb-6">
-                <h2 className="text-3xl font-black mb-2 font-mono uppercase tracking-wider">
-                  {t('simulation.setup')}
-                </h2>
-                <p className="text-gray-600 text-sm border-l-4 border-black pl-3">{t('simulation.setup_subtitle')}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-3xl font-semibold font-serif text-gray-900 tracking-tight">
+                    {t('simulation.setup')}
+                  </h2>
+                  {liveSimulations > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] font-bold uppercase tracking-widest text-black">
+                      <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
+                      {liveSimulations} {language === 'fr' ? 'Simulations Actives' : 'Active Simulations'}
+                    </div>
+                  )}
+                </div>
+                <p className="text-gray-500 text-sm">{t('simulation.setup_subtitle')}</p>
               </div>
 
 
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Left Column */}
-                <div className="space-y-6">
+                <div className="flex flex-col h-full space-y-6">
                   {/* Language Selection */}
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
+                    <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
                       {t('simulation.report_language')}
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       {["french", "english"].map((lang) => (
                         <button
                           key={lang}
                           onClick={() => setConfig({ ...config, language: lang as Language })}
-                          className={`flex-1 py-3 px-4 border-2 transition-all text-sm font-bold uppercase tracking-widest ${
+                          className={`flex-1 py-3 px-4 border rounded-xl transition-all text-sm font-medium shadow-sm ${
                             config.language === lang
-                              ? "bg-black text-white border-black"
-                              : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-black"
+                              ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
+                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
                           }`}
                         >
                           {lang.charAt(0).toUpperCase() + lang.slice(1)}
@@ -984,95 +1301,73 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   </div>
 
                   {/* Duration Selection */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
+                  <div className="flex flex-col flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
                       {t('simulation.duration')}
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[5, 15, 20, 30, 45, 60].map((duration) => (
+                    <div className="grid grid-cols-3 gap-3">
+                      {[5, 15, 30].map((duration) => (
                         <button
                           key={duration}
                           onClick={() => setConfig({ ...config, duration })}
-                          className={`py-3 px-2 border-2 transition-all font-mono font-bold text-sm text-center ${
+                          className={`py-3 px-2 border rounded-xl shadow-sm transition-all font-medium text-sm text-center ${
                             config.duration === duration
-                              ? "bg-black text-white border-black"
-                              : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-black"
+                              ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
+                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
                           }`}
                         >
                           {duration === 60 ? "60 min" : `${duration} min`}
                         </button>
                       ))}
                     </div>
+                    
+                    <div className="mt-4 flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
+                      <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
+                      <span className="text-[11px] font-semibold uppercase tracking-wider">
+                        {language === 'fr' 
+                          ? 'Optimisé pour Google Chrome'
+                          : 'Optimized for Google Chrome'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Chrome & Mic Warning — Moved Below Duration */}
-                  {!isChrome ? (
-                    <div className="border border-red-500 bg-red-50 p-4 mt-6 space-y-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
-                          {/* Chrome PNG */}
-                          <img src="/images/chrome.png" alt="Chrome" className="w-10 h-10 shrink-0 mt-1" />
-                          <div>
-                            <p className="text-sm font-bold uppercase tracking-widest text-red-700">Warning: Unsupported Browser Detected</p>
-                            <p className="text-xs text-red-600 mt-1 leading-relaxed">The Web Speech API requires Google Chrome to work. Your current browser is not supported. Please switch to Chrome.</p>
-                          </div>
-                        </div>
-                        <AlertTriangle className="w-6 h-6 shrink-0 text-red-500" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="border border-gray-200 p-3 mt-6 flex flex-col sm:flex-row items-center justify-between text-xs bg-gray-50/50 gap-4">
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <img src="/images/chrome.png" alt="Chrome" className="w-4 h-4 grayscale opacity-50" />
-                        <span>Only compatible with Google Chrome</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="flex items-center gap-2 font-semibold uppercase tracking-widest hover:text-black transition-colors shrink-0 border border-gray-200 bg-white px-3 py-1 shadow-sm"
-                        onClick={async () => {
-                          try {
-                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            stream.getTracks().forEach(t => t.stop());
-                            alert('✅ Microphone is working!');
-                          } catch {
-                            alert('❌ Microphone access denied or not available. Check browser settings.');
-                          }
-                        }}
-                      >
-                        Test Mic
-                      </button>
-                    </div>
-                  )}
+
                 </div>
 
                 {/* Right Column - Difficulty */}
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-[0.2em]">
+                  <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
                     {t('simulation.difficulty')}
                   </label>
                   <div className="space-y-3">
                     {DIFFICULTY_CARDS.map((diff) => {
                       const Icon = diff.icon;
                       const isSelected = config.difficulty === diff.id;
+                      const highestScore = profile?.memory?.highest_score || 0;
+                      const isHostileLocked = diff.id === 'hostile' && highestScore < 14;
                       
                       return (
                         <button
                           key={diff.id}
-                          onClick={() => setConfig({ ...config, difficulty: diff.id })}
-                          className={`w-full p-4 border-2 text-left transition-all flex items-start gap-4 ${
-                            isSelected
-                              ? `border-black ${diff.bgAccent}`
-                              : `bg-white border-gray-200 ${diff.borderHover}`
+                          onClick={() => !isHostileLocked && setConfig({ ...config, difficulty: diff.id })}
+                          disabled={isHostileLocked}
+                          className={`w-full p-4 border rounded-2xl text-left transition-all flex items-start gap-4 ${
+                            isHostileLocked
+                              ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                              : isSelected
+                                ? `border-gray-900 ring-1 ring-gray-900 bg-gray-50/50 shadow-md ${diff.bgAccent}`
+                                : `bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300`
                           }`}
                         >
-                          <div className={`shrink-0 w-10 h-10 flex items-center justify-center border-2 border-black bg-white ${isSelected ? diff.color : 'text-black'}`}>
-                            <Icon className="w-5 h-5" />
+                          <div className={`shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-white ring-1 ring-gray-200 shadow-sm ${isSelected && !isHostileLocked ? diff.color : 'text-gray-600'}`}>
+                            {isHostileLocked ? <Lock className="w-5 h-5 text-gray-400" /> : <Icon className="w-5 h-5" />}
                           </div>
                           <div>
-                            <div className={`font-bold uppercase tracking-widest text-sm mb-1 ${isSelected ? diff.color : 'text-black'}`}>
+                            <div className={`font-semibold text-sm mb-1 ${isHostileLocked ? 'text-gray-400' : isSelected ? diff.color : 'text-gray-900'}`}>
                               {diff.title}
+                              {isHostileLocked && <span className="ml-2 text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Score 14+ to Unlock</span>}
                             </div>
-                            <div className="text-xs text-gray-600 leading-relaxed">
+                            <div className="text-xs text-gray-500 leading-relaxed">
                               {diff.description}
                             </div>
                           </div>
@@ -1088,7 +1383,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 <button
                   onClick={() => setShowConfirmModal(true)}
                   disabled={isProcessing || !profile || profile.credits < 30}
-                  className="w-full bg-black text-white py-5 font-bold uppercase tracking-widest hover:bg-gray-900 transition-transform active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
+                  className="w-full bg-gray-900 text-white py-4 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
                 >
                   <div className="flex items-center justify-center gap-3 relative z-10">
                     {isProcessing ? (
@@ -1099,14 +1394,14 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                     ) : (
                       <>
                         <span className="text-lg">Start Simulation</span>
-                        <span className="flex items-center gap-1.5 bg-white text-black px-3 py-1 text-sm font-extrabold normal-case tracking-normal shadow-[2px_2px_0px_0px_rgba(255,255,255,0.3)] group-hover:bg-gray-100 transition-colors">
+                        <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
                           30
                           <NextImage 
                             src="/images/favicon.jpeg" 
                             alt="Latexo" 
-                            width={16} 
-                            height={16} 
-                            className="rounded-full"
+                            width={14} 
+                            height={14} 
+                            className="rounded-full grayscale brightness-200"
                           />
                         </span>
                       </>
@@ -1257,7 +1552,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 2 }}
-              onClick={() => setLoadingStep(4)}
+              onClick={() => setLoadingStep(2)}
               className="absolute bottom-6 right-6 text-[10px] uppercase tracking-widest text-gray-400 hover:text-black border border-gray-300 hover:border-black px-3 py-1.5 transition-colors"
             >
               Skip Intro
@@ -1319,24 +1614,60 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
             {/* Center - Jury Panel with Talking Avatars */}
             <div className="flex-1 flex items-center justify-center gap-8 md:gap-16 p-8">
               {JURY_MEMBERS.map((member, index) => {
-                const isThisJurorSpeaking = 
-                  (activeSpeaker === "technical" && index === 0) ||
-                  (activeSpeaker === "academic" && index === 1) ||
-                  (activeSpeaker === "business" && index === 2);
-                  
+                const speakerKey: ActiveSpeaker = index === 0 ? 'technical' : index === 1 ? 'academic' : 'business';
+                const isThisJurorSpeaking = activeSpeaker === speakerKey;
                 const isAnyoneSpeaking = isAISpeaking || isRecording || isProcessingAudio;
+                const showBubbleHere = juryBubbleMessage && lastJurySpeaker === speakerKey;
+                const showSfxHere = sfxEvent && sfxEvent.juror === speakerKey;
                 
                 return (
-                  <TalkingAvatar
-                    key={member.name}
-                    name={member.name}
-                    imagePath={member.imagePath}
-                    bgColor={member.bgColor}
-                    isSpeaking={isThisJurorSpeaking && isAISpeaking}
-                    isThinking={isThisJurorSpeaking && isProcessingAudio}
-                    isInactive={isAnyoneSpeaking && !isThisJurorSpeaking}
-                    size="large"
-                  />
+                  <div key={member.name} className="relative flex flex-col items-center">
+                    {/* SFX emoji bubble (independent of silence bubble) */}
+                    <AnimatePresence>
+                      {showSfxHere && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.5 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.5 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                          className="absolute -top-20 left-1/2 -translate-x-1/2 z-20"
+                        >
+                          <div className="bg-white border-2 border-black rounded-full w-10 h-10 flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] text-lg">
+                            {sfxEvent!.emoji}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Silence nudge bubble */}
+                    <AnimatePresence>
+                      {showBubbleHere && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                          className="absolute -top-14 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap"
+                        >
+                          <div className="bg-black text-white text-[11px] font-semibold tracking-wide px-3 py-1.5 rounded-md shadow-lg">
+                            {juryBubbleMessage}
+                          </div>
+                          {/* Tail */}
+                          <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-black rotate-45" />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <TalkingAvatar
+                      name={member.name}
+                      imagePath={member.imagePath}
+                      bgColor={member.bgColor}
+                      isSpeaking={isThisJurorSpeaking && isAISpeaking}
+                      isThinking={isThisJurorSpeaking && isProcessingAudio}
+                      isInactive={isAnyoneSpeaking && !isThisJurorSpeaking}
+                      size="large"
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -1616,14 +1947,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                {t('simulation.results_title') || 'Redirecting to your Results...'}
              </div>
              
-             {/* Automatically trigger the tab switch to the dashboard version */}
-             {(() => {
-                if (typeof window !== 'undefined' && onSimulationComplete && evaluationResults.simulation_id) {
-                  // Small timeout to let the fade-in happen
-                  setTimeout(() => onSimulationComplete(evaluationResults.simulation_id), 1200);
-                }
-                return null;
-             })()}
+             {/* Tab switch is now handled by the useEffect above — no IIFE side-effects */}
              
            </motion.div>
         )}

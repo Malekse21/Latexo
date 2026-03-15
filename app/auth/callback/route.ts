@@ -11,11 +11,13 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
+      const host = request.headers.get('host') // Use host header to dynamically capture the IP/Domain
       const forwardedHost = request.headers.get('x-forwarded-host')
       const isLocalEnv = process.env.NODE_ENV === 'development'
       
       if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`)
+        // Use the explicit host from the device (e.g., 192.168.1.X:3000) instead of origin which can default to localhost
+        return NextResponse.redirect(`http://${host}${next}`)
       } else if (forwardedHost) {
         return NextResponse.redirect(`https://${forwardedHost}${next}`)
       } else {

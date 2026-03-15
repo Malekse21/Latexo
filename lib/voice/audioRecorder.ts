@@ -117,26 +117,3 @@ export function playAudioBase64(base64Audio: string): Promise<void> {
   });
 }
 
-/**
- * Upload audio blob to STT API
- */
-export async function transcribeAudio(
-  audioBlob: Blob,
-  language: "french" | "english"
-): Promise<string> {
-  const formData = new FormData();
-  formData.append("audio", audioBlob, "recording.webm");
-  formData.append("language", language);
-
-  const response = await fetch("/api/simulation/stt", {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error("Speech-to-text failed");
-  }
-
-  const data = await response.json();
-  return data.transcription;
-}

@@ -39,13 +39,11 @@ export interface PdfContext {
   technologies: string[];
   sections: PdfSection[];
   potentialGaps: string[];
-  keyFindings: string[];
 }
 
 export interface PdfSection {
   name: string;
   summary: string;
-  weaknessScore: number;  // 0-1, higher = weaker
 }
 
 // ── Question ──────────────────────────────────────────────
@@ -79,7 +77,6 @@ export interface LiveSession {
 
   // Context
   pdfContext: PdfContext;
-  weakTopics: string[];         // from previous session, [] if first
 
   // Question tracking
   questionBank: GeneratedQuestion[];

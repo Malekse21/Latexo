@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getSession, deleteSession } from "@/src/lib/session/state";
 
 interface TranscriptMessage {
   speaker: "student" | "technical" | "academic" | "business";
@@ -13,6 +14,7 @@ interface EvaluateRequest {
   config: {
     difficulty: string;
     language: string;
+    durationMinutes: number;
   };
 }
 
@@ -32,79 +34,7 @@ function getMention(score: number): string {
   return "Ajourné";
 }
 
-// ─── Behavioral Analysis ────────────────────────────────────
-function analyzeBehavior(transcript: TranscriptMessage[]): {
-  behavioral_stats: BehavioralStats;
-  fluency_score: number;
-  stress_score: number;
-} {
-  const hesitationMarkers = [
-    "euh", "uhm", "uh", "um", "...",
-    "je pense que", "en fait", "donc", "alors",
-    "well", "like", "you know",
-  ];
-
-  const studentMessages = transcript.filter((msg) => msg.speaker === "student");
-
-  let fillerCount = 0;
-  studentMessages.forEach((msg) => {
-    const textLower = msg.text.toLowerCase();
-    hesitationMarkers.forEach((marker) => {
-      const regex = new RegExp(`\\b${marker}\\b`, "gi");
-      const matches = textLower.match(regex);
-      if (matches) fillerCount += matches.length;
-    });
-  });
-
-  const fluencyScore = Math.max(0, Math.min(100, 100 - fillerCount * 5));
-
-  const responseTimes: number[] = [];
-  for (let i = 0; i < transcript.length - 1; i++) {
-    const current = transcript[i];
-    const next = transcript[i + 1];
-    if (
-      (current.speaker === "technical" ||
-        current.speaker === "academic" ||
-        current.speaker === "business") &&
-      next.speaker === "student"
-    ) {
-      responseTimes.push(next.timestamp - current.timestamp);
-    }
-  }
-
-  const avgResponseTime =
-    responseTimes.length > 0
-      ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length / 1000
-      : 0;
-
-  let stressScore = 0;
-  if (avgResponseTime <= 2) {
-    stressScore = (avgResponseTime / 2) * 20;
-  } else if (avgResponseTime <= 4) {
-    stressScore = 20 + ((avgResponseTime - 2) / 2) * 30;
-  } else if (avgResponseTime <= 6) {
-    stressScore = 50 + ((avgResponseTime - 4) / 2) * 30;
-  } else {
-    stressScore = Math.min(100, 80 + (avgResponseTime - 6) * 5);
-  }
-
-  const totalDuration =
-    transcript.length > 0
-      ? transcript[transcript.length - 1].timestamp - transcript[0].timestamp
-      : 0;
-
-  return {
-    behavioral_stats: {
-      filler_count: fillerCount,
-      avg_response_time: Math.round(avgResponseTime * 10) / 10,
-      total_duration: Math.round(totalDuration / 1000),
-    },
-    fluency_score: Math.round(fluencyScore),
-    stress_score: Math.round(stressScore),
-  };
-}
-
-// ─── Groq Evaluator ─────────────────────────────────────────
+// Removed local analyzeBehavior function to rely purely on AI grading
 async function runEvaluation(
   transcript: TranscriptMessage[],
   reportData: any,
@@ -113,7 +43,6 @@ async function runEvaluation(
 ): Promise<{
   score: number;
   proficiency: { tech: number; acad: number; biz: number };
-  sticker: string;
   jury_feedback: {
     tech: { comment: string; tip: string };
     strict: { comment: string; tip: string };
@@ -130,34 +59,32 @@ async function runEvaluation(
     .map((msg) => `${msg.speaker.toUpperCase()}: ${msg.text}`)
     .join("\n");
 
-  const skeletonData = reportData?.data || {};
   const pastMemory = memoryData || {};
 
   const systemPrompt = `Act as the Latexo Evaluation Engine. Review the transcript of the defense.
 
 Inputs:
-PFE JSON: ${JSON.stringify(skeletonData, null, 2)}
 Memory JSON: ${JSON.stringify(pastMemory)}
 Transcript: 
 ${transcriptText}
 
+## CRITICAL GRADING RULES (MUST FOLLOW):
+- If the student barely spoke, gave only one-word answers, or remained completely silent, you MUST assign a FAILING grade (0-4 out of 20) and set ALL proficiency scores below 10. Do NOT give them the benefit of the doubt.
+- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. Count how much the student spoke vs the jury. If the student's contribution is negligible, the grade MUST reflect that.
+- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20. Only substantive, detailed answers merit 10+/20.
+
 Tasks:
-1. Grade: Assign a final grade out of 20.0 (one decimal place).
+1. Grade: Assign a final grade out of 20.0 (one decimal place). Be strict and fair.
 2. 3-Axis Proficiency: Score Technical, Academic, and Business performance (0-100 each).
-3. Persona Critique: Provide 1 "Comment" (What they did) and 1 "Tip" (How to fix it) for each of the 3 Jurors:
-   - Technical Expert (tech)
-   - Strict Academic (strict)
-   - Business Strategist (business)
-4. Sticker Roast: Generate a funny 4-word roast in Tunisian Derja (Latin script). Make it playful and culturally relevant.
-5. Memory Compact: Write a 2-sentence note for the next simulation about what the student still hasn't mastered.
+3. Persona Critique: Provide 1 specific "Comment" (What they did) and 1 actionable "Tip" (How to fix it) for each Juror.
+4. Memory Compact: Write a 2-sentence note tracking what the student must improve next time.
 
 Defense Language: ${language}
 
 Output Format (Strict JSON only, no markdown, no explanation):
 {
-  "score": 14.5,
-  "proficiency": { "tech": 80, "acad": 60, "biz": 90 },
-  "sticker": "...",
+  "score": <number 0-20>,
+  "proficiency": { "tech": <0-100>, "acad": <0-100>, "biz": <0-100> },
   "jury_feedback": {
     "tech": { "comment": "...", "tip": "..." },
     "strict": { "comment": "...", "tip": "..." },
@@ -178,7 +105,7 @@ Output Format (Strict JSON only, no markdown, no explanation):
         { role: "system", content: systemPrompt },
         { role: "user", content: "Evaluate the defense and return the JSON." },
       ],
-      temperature: 0.5,
+      temperature: 0.3,
       max_tokens: 2000,
       response_format: { type: "json_object" },
     }),
@@ -206,13 +133,12 @@ Output Format (Strict JSON only, no markdown, no explanation):
   const parsed = JSON.parse(content);
 
   return {
-    score: Math.max(0, Math.min(20, parsed.score || 10)),
+    score: Math.max(0, Math.min(20, parsed.score ?? 0)),
     proficiency: {
-      tech: Math.max(0, Math.min(100, parsed.proficiency?.tech || 50)),
-      acad: Math.max(0, Math.min(100, parsed.proficiency?.acad || 50)),
-      biz: Math.max(0, Math.min(100, parsed.proficiency?.biz || 50)),
+      tech: Math.max(0, Math.min(100, parsed.proficiency?.tech ?? 0)),
+      acad: Math.max(0, Math.min(100, parsed.proficiency?.acad ?? 0)),
+      biz: Math.max(0, Math.min(100, parsed.proficiency?.biz ?? 0)),
     },
-    sticker: parsed.sticker || "Ma3andekch niveau",
     jury_feedback: {
       tech: {
         comment: parsed.jury_feedback?.tech?.comment || "No comment available.",
@@ -276,20 +202,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch student memory from profiles
+    // Fetch student memory and stats from profiles
     const { data: profileData } = await supabase
       .from("profiles")
-      .select("memory")
+      .select("memory, total_sessions, best_score, total_time_minutes, current_streak, longest_streak, last_session")
       .eq("id", user.id)
       .single();
 
     const pastMemory = profileData?.memory || {};
+    const currentTotalSessions = profileData?.total_sessions || 0;
+    const currentBestScore = profileData?.best_score || 0;
+    // Fetch the live session to get the simulation ID created at session start
+    const liveSession = await getSession(user.id);
+    const simulationId = liveSession?.sessionId;
 
-    // Step 1: Behavioral Analysis (local — no API call)
-    const { behavioral_stats, fluency_score, stress_score } =
-      analyzeBehavior(transcript);
+    if (!simulationId) {
+      console.error("No live session found for user:", user.id);
+      return NextResponse.json(
+        { error: "No active simulation session found" },
+        { status: 404 }
+      );
+    }
 
-    // Step 2: AI Evaluation via Groq
+    // Step 1: AI Evaluation via Groq
     const evaluation = await runEvaluation(
       transcript,
       reportData,
@@ -297,91 +232,155 @@ export async function POST(request: NextRequest) {
       config.language
     );
 
-    // Step 3: Compute mention
+    // Step 2: Compute mention
     const mention = getMention(evaluation.score);
 
-    // Step 4: Build combined metrics (for backward compat)
-    const metrics = {
-      technical: evaluation.proficiency.tech,
-      academic: evaluation.proficiency.acad,
-      market: evaluation.proficiency.biz,
-      fluency: fluency_score,
-      stress: stress_score,
-    };
+    const final_grade = evaluation.score;
 
-    const weightedScore =
-      metrics.technical * 0.4 +
-      metrics.academic * 0.3 +
-      metrics.market * 0.2 +
-      metrics.fluency * 0.1;
-    const calculatedGrade = Math.round((weightedScore / 100) * 20 * 10) / 10;
-
-    // Use AI score as primary, keep calculated as fallback
-    const final_grade = evaluation.score || calculatedGrade;
-
-    // Step 5: Save to database
-    const { data: simulation, error: insertError } = await supabase
+    // Step 3: Update the existing IN_PROGRESS simulation row with results
+    const { data: simulation, error: updateError } = await supabase
       .from("simulations")
-      .insert({
-        report_id,
-        user_id: user.id,
+      .update({
         final_grade,
         mention,
-        metrics,
-        behavioral_stats,
-        jury_feedback: {
-          // Legacy format (backward compat)
-          tech_quote: evaluation.jury_feedback.tech.comment,
-          strict_quote: evaluation.jury_feedback.strict.comment,
-          business_quote: evaluation.jury_feedback.business.comment,
-        },
-        transcript,
-        // New columns
+        status: "COMPLETED",
         evaluation: {
           score: evaluation.score,
           proficiency: evaluation.proficiency,
         },
+        jury_feedback: evaluation.jury_feedback,
         feedback: evaluation.jury_feedback,
-        sticker_caption: evaluation.sticker,
+        transcript,
+        sticker_caption: null,
         memory_snapshot: evaluation.memory_update,
       })
+      .eq("id", simulationId)
       .select()
       .single();
 
-    if (insertError) {
-      console.error("Database insert error:", insertError);
+    if (updateError) {
+      console.error("Database update error:", updateError);
       return NextResponse.json(
         { error: "Failed to save simulation results" },
         { status: 500 }
       );
     }
 
-    // Step 6: Update student memory on profile
+    // Step 6: Update profile — dedicated columns + lean memory
     const updatedMemory = {
       ...pastMemory,
-      last_session: new Date().toISOString(),
       last_note: evaluation.memory_update,
-      session_count: (pastMemory.session_count || 0) + 1,
     };
+    // Remove legacy duplicates from memory blob
+    delete updatedMemory.last_session;
+    delete updatedMemory.session_count;
+    delete updatedMemory.highest_score;
+
+    // Step 6b: Calculate streak
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    
+    let currentStreak = profileData?.current_streak || 0;
+    let longestStreak = profileData?.longest_streak || 0;
+    const lastSessionDate = profileData?.last_session ? new Date(profileData.last_session) : null;
+
+    if (lastSessionDate) {
+      const lastUTC = new Date(Date.UTC(lastSessionDate.getUTCFullYear(), lastSessionDate.getUTCMonth(), lastSessionDate.getUTCDate()));
+      const diffDays = Math.floor((todayUTC.getTime() - lastUTC.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) {
+        // Already practiced today — streak stays the same
+      } else if (diffDays === 1) {
+        // Consecutive day — increment streak
+        currentStreak += 1;
+      } else {
+        // Missed a day — reset streak
+        currentStreak = 1;
+      }
+    } else {
+      // First ever session
+      currentStreak = 1;
+    }
+
+    longestStreak = Math.max(longestStreak, currentStreak);
 
     await supabase
       .from("profiles")
-      .update({ memory: updatedMemory })
+      .update({
+        memory: updatedMemory,
+        total_sessions: currentTotalSessions + 1,
+        total_time_minutes: (profileData?.total_time_minutes || 0) + (config.durationMinutes || 0),
+        best_score: Math.max(currentBestScore, final_grade),
+        last_session: new Date().toISOString(),
+        current_streak: currentStreak,
+        longest_streak: longestStreak,
+      })
       .eq("id", user.id);
+
+    // Step 5: Save asked questions to report for cross-simulation continuity
+    try {
+      if (liveSession && liveSession.questionsAskedTexts?.length > 0) {
+        // Fetch current past_questions from the report
+        const { data: reportForHistory } = await supabase
+          .from("reports")
+          .select("past_questions")
+          .eq("id", report_id)
+          .single();
+
+        const existingPastQuestions: string[] = reportForHistory?.past_questions || [];
+        const combined = [...existingPastQuestions, ...liveSession.questionsAskedTexts];
+        // Keep only the last 60 questions to avoid prompt bloat
+        const trimmed = combined.slice(-60);
+
+        await supabase
+          .from("reports")
+          .update({ past_questions: trimmed })
+          .eq("id", report_id);
+      }
+
+      // Clean up live session
+      await deleteSession(user.id);
+
+      // --- PRUNING LOGIC: Keep only the 3 most recent simulations ---
+      const { data: allSims } = await supabase
+        .from("simulations")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("report_id", report_id)
+        .order("created_at", { ascending: false });
+
+      if (allSims && allSims.length > 3) {
+        const idsToDelete = allSims.slice(3).map((s) => s.id);
+        
+        const { error: deleteError } = await supabase
+          .from("simulations")
+          .delete()
+          .in("id", idsToDelete);
+          
+        if (deleteError) {
+          console.error("Failed to prune old simulations:", deleteError);
+        } else {
+          console.log(`Pruned ${idsToDelete.length} old simulations for user ${user.id}.`);
+        }
+      }
+      // --------------------------------------------------------------
+
+    } catch (cleanupErr) {
+      console.error("Failed to cleanup session or save history:", cleanupErr);
+      // Non-fatal — don't block the response
+    }
 
     return NextResponse.json({
       success: true,
       simulation_id: simulation.id,
       final_grade,
       mention,
-      metrics,
-      behavioral_stats,
       evaluation: {
         score: evaluation.score,
         proficiency: evaluation.proficiency,
       },
       feedback: evaluation.jury_feedback,
-      sticker_caption: evaluation.sticker,
+      sticker_caption: null,
       memory_update: evaluation.memory_update,
     });
   } catch (error) {

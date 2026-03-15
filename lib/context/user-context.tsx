@@ -15,8 +15,11 @@ interface Profile {
   university?: string | null;
   specialty?: string | null;
   total_sessions?: number;
-  total_time_seconds?: number;
+  last_session?: string | null;
   best_score?: number;
+  memory?: Record<string, any> | null;
+  current_streak?: number;
+  longest_streak?: number;
 }
 
 interface UserContextType {

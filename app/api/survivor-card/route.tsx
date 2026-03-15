@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { data: simulation, error } = await supabase
       .from("simulations")
-      .select("final_grade, created_at, user_id, metrics")
+      .select("final_grade, created_at, user_id, evaluation")
       .eq("id", simulationId)
       .single();
 

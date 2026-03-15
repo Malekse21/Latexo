@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, User, LogOut, Languages, Trophy } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/context/user-context";
 
@@ -12,9 +12,18 @@ export function DashboardNavbar() {
   const router = useRouter();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const { profile, user, loading, signOut, language, setLanguage, t } = useUser();
-  const avatarUrl = profile?.avatar_url?.includes('dicebear.com')
-    ? (user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null)
-    : profile?.avatar_url;
+  const avatarUrl = profile?.avatar_url;
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleLogout = async () => {
     setIsProfileOpen(false);
@@ -22,7 +31,7 @@ export function DashboardNavbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 h-16 border-b border-[#E5E5E5] bg-white z-50 flex items-center justify-between px-6">
+    <nav className="fixed top-0 left-0 right-0 h-16 border-b border-[#E5E5E5] bg-white z-50 flex items-center justify-between px-3 md:px-6">
       {/* Left: Logo */}
       <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
         <div className="relative w-12 h-12">
@@ -34,7 +43,7 @@ export function DashboardNavbar() {
             priority
           /> 
         </div>
-        <span className="font-extrabold text-2xl tracking-tighter">Latexo</span>
+        <span className="font-serif font-bold text-xl md:text-2xl tracking-tight text-gray-900">Latexo</span>
       </Link>
 
       {/* Center: Credits Pill (Hidden on Mobile) */}
@@ -58,7 +67,13 @@ export function DashboardNavbar() {
 
       {/* Right: Profile */}
       <div className="flex items-center gap-3">
-        <div className="relative">
+        {/* Streak Badge */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-50 border border-orange-200 rounded-lg shadow-sm">
+          <span className="text-orange-500 font-bold text-xs">🔥</span>
+          <span className="text-sm font-black text-orange-600 font-mono leading-none">{profile?.current_streak ?? 0}</span>
+        </div>
+
+        <div className="relative" ref={profileMenuRef}>
         <button 
           onClick={() => setIsProfileOpen(!isProfileOpen)}
           className="flex items-center justify-center w-11 h-11 border-[1.5px] border-[#E5E5E5] rounded-full hover:border-black transition-colors overflow-hidden bg-gray-50"

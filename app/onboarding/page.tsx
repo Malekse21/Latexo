@@ -296,7 +296,6 @@ export default function OnboardingPage() {
           .from('profiles')
           .update({
             full_name: form.fullName,
-            gender: null, // Gender step removed
             avatar_url: avatarUrl,
             university: form.university,
             specialty: form.specialty,

@@ -13,7 +13,7 @@ interface ReportFrameProps {
 
 export function ReportFrame({ isEmpty, thumbnailUrl, onUploadClick, className }: ReportFrameProps) {
   return (
-    <div className={`relative w-full aspect-[1/1.414] mx-auto ${className || ''}`}>
+    <div className={`relative w-full aspect-[1/1.414] ${className || ''}`}>
       {/* The Frame Container (Now Minimalist Black) */}
       <div 
         className="absolute inset-0 z-0 pointer-events-none"

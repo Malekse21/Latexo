@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { reportId, durationMinutes } = await request.json();
+    const { reportId, durationMinutes, difficulty } = await request.json();
 
     if (![5, 15, 20, 30, 45, 60].includes(durationMinutes)) {
       return NextResponse.json({ error: 'Invalid duration. Must be 5, 15, 20, 30, 45, or 60.' }, { status: 400 });
@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
     const result = await startSession(
       user.id,
       reportId,
-      durationMinutes as SessionDuration
+      durationMinutes as SessionDuration,
+      difficulty || 'standard'
     );
 
     return NextResponse.json(result);

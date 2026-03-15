@@ -5,42 +5,31 @@ import { motion, useSpring, useTransform } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/context/user-context";
 import NextImage from "next/image";
-import html2canvas from "html2canvas";
+import Link from "next/link";
+import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────
 interface SimulationData {
   id: string;
   final_grade: number;
   mention?: string;
-  metrics: {
-    technical: number;
-    academic: number;
-    market: number;
-    fluency: number;
-    stress: number;
-  };
-  behavioral_stats: {
-    filler_count: number;
-    avg_response_time: number;
-    total_duration: number;
-  };
-  // Legacy
-  jury_feedback?: {
-    tech_quote: string;
-    strict_quote: string;
-    business_quote: string;
-  };
-  // New columns
-  evaluation?: {
+  evaluation: {
     score: number;
     proficiency: { tech: number; acad: number; biz: number };
+  };
+  jury_feedback?: {
+    tech_quote?: string;
+    strict_quote?: string;
+    business_quote?: string;
+    tech?: { comment: string; tip: string };
+    strict?: { comment: string; tip: string };
+    business?: { comment: string; tip: string };
   };
   feedback?: {
     tech: { comment: string; tip: string };
     strict: { comment: string; tip: string };
     business: { comment: string; tip: string };
   };
-  sticker_caption?: string;
   created_at: string;
 }
 
@@ -79,19 +68,10 @@ const JURY_MEMBERS = [
 // ─── Component ────────────────────────────────────────────────
 export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
   const { profile, user } = useUser();
-  const avatarUrl = profile?.avatar_url?.includes('dicebear.com')
-    ? (user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null)
-    : profile?.avatar_url;
+  const avatarUrl = profile?.avatar_url;
   const [simulation, setSimulation] = useState<SimulationData | null>(null);
   const [lastScore, setLastScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
-  const stickerRef = useRef<HTMLDivElement>(null);
-
-  // Random jury member for the sticker
-  const [stickerJury] = useState(() =>
-    JURY_MEMBERS[Math.floor(Math.random() * JURY_MEMBERS.length)]
-  );
 
   useEffect(() => {
     async function fetchData() {
@@ -133,26 +113,6 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
     fetchData();
   }, [simulationId, profile?.id]);
 
-  // ─── Download Sticker ─────────────────────────────────────
-  const handleDownloadSticker = async () => {
-    if (!stickerRef.current) return;
-    setDownloading(true);
-    try {
-      const canvas = await html2canvas(stickerRef.current, {
-        backgroundColor: "#ffffff",
-        scale: 2,
-      });
-      const link = document.createElement("a");
-      link.download = `latexo-sticker-${simulation?.final_grade}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    } catch (err) {
-      console.error("Sticker download failed:", err);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   // ─── Animated Score Counter ───────────────────────────────
   const animatedScore = useSpring(0, { duration: 2400, bounce: 0 });
   const displayScore = useTransform(animatedScore, (v) => v.toFixed(1));
@@ -190,9 +150,9 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
 
   // ─── Derived Data ─────────────────────────────────────────
   const proficiency = simulation.evaluation?.proficiency || {
-    tech: simulation.metrics.technical,
-    acad: simulation.metrics.academic,
-    biz: simulation.metrics.market,
+    tech: 0,
+    acad: 0,
+    biz: 0,
   };
 
   const mention =
@@ -208,7 +168,6 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
       : "Ajourné");
 
   const isPassing = simulation.final_grade >= 10;
-  const stickerCaption = simulation.sticker_caption || "Ma3andekch niveau 😤";
   const scoreDelta = lastScore !== null ? simulation.final_grade - lastScore : null;
 
   // ─── Render ───────────────────────────────────────────────
@@ -222,7 +181,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+          className="relative border border-gray-200 rounded-2xl p-6 md:p-8 bg-white shadow-sm"
         >
           {/* Latexo Branding — top right */}
           <div className="absolute top-4 right-4 flex items-center gap-2">
@@ -240,7 +199,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
 
           <div className="flex items-center gap-6">
             {/* Profile Picture */}
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-black bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full ring-1 ring-gray-200 shadow-sm bg-gray-50 overflow-hidden shrink-0 flex items-center justify-center">
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
@@ -261,19 +220,19 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
               </p>
 
               <div className="flex items-baseline gap-2 mt-1">
-                <motion.span className="text-6xl md:text-8xl font-black leading-none tracking-tighter">
+                <motion.span className="text-6xl md:text-8xl font-serif font-semibold leading-none tracking-tight text-gray-900">
                   {displayScore}
                 </motion.span>
-                <span className="text-2xl md:text-4xl text-gray-300 font-bold">/20</span>
+                <span className="text-2xl md:text-4xl text-gray-400 font-medium font-serif">/20</span>
               </div>
 
               <div className="flex items-center gap-3 mt-4 flex-wrap">
                 {/* Mention Badge */}
                 <span
-                  className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest border-2 ${
+                  className={`px-3 py-1 text-xs font-medium rounded-full ${
                     isPassing
-                      ? "border-black bg-black text-white"
-                      : "border-red-600 bg-red-600 text-white"
+                      ? "bg-gray-900 text-white"
+                      : "bg-red-500 text-white"
                   }`}
                 >
                   {mention}
@@ -308,107 +267,57 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
         </motion.div>
 
         {/* ══════════════════════════════════════════════════════
-            SECTION 2 — Proficiency Bars + Downloadable Sticker
+            SECTION 2 — Proficiency Bars
             ══════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+          className="border border-gray-200 rounded-2xl p-6 md:p-8 bg-white shadow-sm"
         >
-          {/* Left: 3-Axis Proficiency */}
-          <div className="border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-            <h3 className="text-xs font-bold uppercase tracking-widest mb-5">
-              Axis Proficiency
-            </h3>
-            <div className="space-y-5">
-              {[
-                { label: "Technical", value: proficiency.tech, color: "#06b6d4" },
-                { label: "Academic", value: proficiency.acad, color: "#a855f7" },
-                { label: "Market", value: proficiency.biz, color: "#f59e0b" },
-              ].map((axis) => (
-                <div key={axis.label}>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-sm font-bold uppercase tracking-wider">
+          <h3 className="text-xs font-bold text-gray-400 mb-6 uppercase tracking-[0.2em]">
+            Performance Axes
+          </h3>
+          <div className="space-y-6">
+            {[
+              { label: "Technical", value: proficiency.tech, Icon: Code2 },
+              { label: "Academic", value: proficiency.acad, Icon: GraduationCap },
+              { label: "Market", value: proficiency.biz, Icon: Briefcase },
+            ].map((axis) => (
+              <div key={axis.label} className="group cursor-default">
+                <div className="flex justify-between items-end mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <axis.Icon className="w-4 h-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
+                    <span className="text-sm font-bold text-gray-900 uppercase tracking-wide">
                       {axis.label}
                     </span>
-                    <span className="text-base font-black font-mono">{axis.value}%</span>
                   </div>
-                  <div className="w-full h-5 bg-gray-50 border-2 border-black overflow-hidden relative">
-                    {/* Background grid pattern for empty space */}
-                    <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '8px 8px' }}></div>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${axis.value}%` }}
-                      transition={{ delay: 0.5, duration: 0.8, ease: "easeOut" }}
-                      className="h-full border-r-2 border-black"
-                      style={{ backgroundColor: axis.color }}
-                    />
+                  <span className="text-sm font-mono font-bold text-gray-900">{axis.value}%</span>
+                </div>
+                {/* Brutalist Progress Bar */}
+                <div className="w-full h-3 bg-gray-100 border border-gray-200 overflow-hidden relative">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${axis.value}%` }}
+                    transition={{ delay: 0.5, duration: 0.8, ease: "easeOut" }}
+                    className="h-full bg-gray-900 transition-all border-r border-gray-900"
+                  />
+                  {/* Tick marks for scale */}
+                  <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                    {[25, 50, 75].map((mark) => (
+                      <div 
+                        key={mark} 
+                        className="absolute top-0 h-full w-px bg-gray-400/30" 
+                        style={{ left: `${mark}%` }} 
+                      />
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Right: Downloadable Sticker */}
-          <div className="border-4 border-black p-6 md:p-8 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-widest mb-4 self-start flex items-center gap-2 text-black">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-orange-500">
-                <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.177A7.547 7.547 0 016.648 6.61a.75.75 0 00-1.152.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" clipRule="evenodd" />
-              </svg>
-              Sticker Roast
-            </h3>
-
-            {/* Sticker Card (captured by html2canvas) */}
-            <div
-              ref={stickerRef}
-              className="w-56 bg-white border-2 border-black p-4 flex flex-col items-center gap-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.15)]"
-            >
-              {/* Jury Avatar */}
-              <div
-                className={`w-24 h-24 rounded-full ${stickerJury.bgColor} border-2 border-black overflow-hidden flex items-center justify-center`}
-              >
-                <img
-                  src={stickerJury.imagePath}
-                  alt={stickerJury.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                    e.currentTarget.parentElement!.innerHTML = `<span class="text-3xl font-bold text-black">${stickerJury.name[0]}</span>`;
-                  }}
-                />
               </div>
-
-              {/* Caption */}
-              <p className="text-center text-sm font-bold leading-tight">
-                "{stickerCaption}"
-              </p>
-
-              {/* Latexo watermark */}
-              <div className="flex items-center gap-1.5 opacity-40">
-                <NextImage
-                  src="/images/favicon.jpeg"
-                  alt="Latexo"
-                  width={12}
-                  height={12}
-                  className="rounded-full"
-                />
-                <span className="text-[8px] font-bold uppercase tracking-widest">
-                  Latexo
-                </span>
-              </div>
-            </div>
-
-            {/* Download Button */}
-            <button
-              onClick={handleDownloadSticker}
-              disabled={downloading}
-              className="mt-6 w-full border-2 border-black py-3 text-xs font-black uppercase tracking-widest hover:bg-black hover:text-white transition-all active:translate-y-1 active:shadow-none hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50"
-            >
-              {downloading ? "Generating..." : "↓ Download Sticker"}
-            </button>
+            ))}
           </div>
         </motion.div>
+
 
         {/* ══════════════════════════════════════════════════════
             SECTION 3 — Jury Feedback & Tips
@@ -417,9 +326,9 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+          className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden"
         >
-          <h3 className="text-xs font-bold uppercase tracking-widest p-6 pb-0">
+          <h3 className="text-lg font-serif font-semibold text-gray-900 p-6 pb-0">
             Jury Feedback
           </h3>
 
@@ -442,7 +351,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
                 >
                   {/* Avatar */}
                   <div
-                    className={`w-12 h-12 rounded-full ${member.bgColor} border border-black shrink-0 overflow-hidden flex items-center justify-center`}
+                    className={`w-12 h-12 rounded-full ${member.bgColor} ring-1 ring-gray-200 shadow-sm shrink-0 overflow-hidden flex items-center justify-center`}
                   >
                     <img
                       src={member.imagePath}
@@ -458,16 +367,16 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-sm font-bold">{member.name}</span>
-                      <span className="text-[10px] text-gray-400 uppercase tracking-wider">
+                      <span className="text-sm font-medium text-gray-900">{member.name}</span>
+                      <span className="text-xs text-gray-500">
                         {member.title}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700 mb-2 italic border-l-2 border-gray-300 pl-3">
+                    <p className="text-sm text-gray-600 mb-3 leading-relaxed">
                       "{comment}"
                     </p>
-                    <div className="bg-gray-50 border-l-2 border-black px-3 py-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-0.5">
+                    <div className="bg-gray-50/50 rounded-lg border border-gray-100 p-3">
+                      <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
                         Tip
                       </span>
                       <p className="text-xs text-gray-600">{tip}</p>
@@ -477,6 +386,28 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
               );
             })}
           </div>
+        </motion.div>
+
+        {/* ══════════════════════════════════════════════════════
+            SECTION 4 — Compact CTA to Re-run Simulation
+            ══════════════════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="border border-gray-200 rounded-xl p-4 bg-gray-900 flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <RefreshCw className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-300">Ready for another round?</span>
+          </div>
+          <Link
+            href="/dashboard?tab=defense"
+            className="group inline-flex items-center gap-1.5 bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-100 hover:scale-[1.02] active:scale-95"
+          >
+            Retry
+            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
         </motion.div>
       </div>
     </div>

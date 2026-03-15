@@ -1,9 +1,9 @@
 "use client";
 
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
-import { StatsPanel } from "@/components/dashboard/StatsPanel";
+import { Clock, ArrowRight, MessageCircle, TrendingDown } from "lucide-react";
 import Image from "next/image";
-import { Clock } from "lucide-react";
+import { useMemo } from "react";
 
 interface Report {
   id: string;
@@ -20,93 +20,202 @@ interface Report {
 interface CardsViewProps {
   profile: any;
   activeReport: Report | null;
-  dynamicGreeting: string;
-  dynamicQuote: string;
+  greeting: string;
   daysUntilDefense: number;
+  readinessScore: number | null;
+  projectedScore: number | null;
+  lastGrade: number | null;
+  pastQuestion: string | null;
   onUploadClick: () => void;
+  onNavigateToDefense: () => void;
   t: (key: string, params?: any) => any;
+}
+
+const JURIES = [
+  { name: 'Malek', avatar: '/jury/technical-expert.png', role: 'Technical' },
+  { name: 'Souad', avatar: '/jury/strict-academic.png', role: 'Academic' },
+  { name: 'Amir', avatar: '/jury/business-strategist.png', role: 'Business' }
+];
+
+function getReadinessMention(score: number): string {
+  if (score >= 85) return "Prêt";
+  if (score >= 65) return "Presque prêt";
+  if (score >= 40) return "En progression";
+  if (score >= 20) return "Début prometteur";
+  return "À commencer";
 }
 
 export function CardsView({
   profile,
   activeReport,
-  dynamicGreeting,
-  dynamicQuote,
+  greeting,
   daysUntilDefense,
+  readinessScore,
+  projectedScore,
+  lastGrade,
+  pastQuestion,
   onUploadClick,
+  onNavigateToDefense,
   t
 }: CardsViewProps) {
+  const bestScore = profile?.best_score || 0;
+  const gap = lastGrade !== null ? bestScore - lastGrade : 0;
+  const hasSessionData = lastGrade !== null && bestScore > 0;
+
+  // Randomize jury once based on the pastQuestion to stay stable during re-renders
+  const selectedJury = useMemo(() => {
+    if (!pastQuestion) return JURIES[0];
+    const index = pastQuestion.length % JURIES.length;
+    return JURIES[index];
+  }, [pastQuestion]);
+
   return (
     <div className="flex flex-col h-auto md:h-[calc(100vh-200px)]">
       {/* Header Section */}
-      <header className="flex flex-col md:flex-row justify-between items-center md:items-start w-full mb-4 gap-4 px-2">
-        {/* Left: Supervisor Avatar & Welcome & Quote */}
-        <div className="flex items-center md:items-start gap-4 text-center md:text-left max-w-2xl w-full">
-          {/* Supervisor Avatar Image */}
-          <div className="w-12 h-12 md:w-16 md:h-16 shrink-0 border-[3px] border-black rounded-full overflow-hidden bg-white shadow-[4px_4px_0px_#000000]">
-            <Image 
-              src="/jury/supervisor.png" 
-              alt="Supervisor" 
-              width={64} 
-              height={64} 
-              className="w-full h-full object-cover"
-              priority
-            />
-          </div>
-          <div className="flex flex-col space-y-1">
-            <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase">
-              {dynamicGreeting}, {profile?.full_name?.split(' ')[0] || 'Scholar'}
-            </h1>
-            <div className="bg-gray-50 border border-gray-100 px-3 py-1.5 italic text-gray-600 font-serif border-l-4 border-l-black text-xs">
-              "{dynamicQuote}"
+      <header className="w-full mb-6 px-2">
+        <div className="flex flex-col space-y-2">
+          <h1 className="text-xl lg:text-3xl font-black tracking-tight uppercase">
+            {greeting}, {profile?.full_name?.split(' ')[0] || 'Scholar'}
+          </h1>
+          
+          {daysUntilDefense > 0 && (
+            <div className="flex items-center gap-2 text-zinc-600 font-mono text-sm uppercase tracking-widest font-bold">
+              <Clock className="w-4 h-4" />
+              <span>{t('welcome.defense_in')} <span className="text-black font-black">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span></span>
             </div>
-          </div>
+          )}
         </div>
-
-        {/* Right: Brutalist Countdown Timer */}
-        {daysUntilDefense > 0 && (
-          <div className="flex flex-col items-end">
-            <div className="bg-white border-[3px] border-black p-2 md:p-3 shadow-[4px_4px_0px_#000000] flex items-center gap-3">
-              <div className="hidden md:flex flex-col items-end">
-                <p className="text-[10px] text-gray-500 uppercase font-bold tracking-[0.2em]">{t('welcome.defense_in')}</p>
-              </div>
-              <div className="flex items-center gap-2 bg-black text-white px-3 py-1.5">
-                <Clock className="w-4 h-4 text-yellow-400" />
-                <span className="text-lg md:text-xl font-black font-mono tracking-widest">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </header>
 
-      {/* Project Area - Centered & Expanded */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        {/* Left Column: Artifact (Golden Frame) */}
-        <div className="w-full flex justify-center md:justify-center p-2">
+      {/* Main Content: Left Thumbnail + Right Panel */}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row justify-between gap-8 px-2">
+        {/* Left: Artifact (Golden Frame) */}
+        <div className="flex justify-center lg:justify-start shrink-0">
           <ReportFrame 
             isEmpty={!activeReport}
             thumbnailUrl={activeReport?.thumbnail_url}
             onUploadClick={onUploadClick}
-            className="shadow-xl max-w-[300px]"
+            className="shadow-xl w-full max-w-[320px] sm:max-w-[400px] lg:w-[320px]"
           />
         </div>
 
-        {/* Right Column: Stats */}
-        <div className="w-full flex justify-center md:justify-start h-full max-h-[500px] items-center">
-          {activeReport ? (
-            <StatsPanel 
-              filename={activeReport.name || activeReport.title}
-              pageCount={activeReport.page_count}
-              wordCount={activeReport.word_count}
-              createdAt={activeReport.created_at}
-              language={activeReport.detected_language}
-            />
-          ) : (
-            <div className="p-8 text-gray-400 font-mono border-l-2 border-gray-100 h-fit">
-              <p className="text-lg">{t('dashboard.no_file')}</p>
-              <p className="text-sm mt-2">{t('dashboard.upload_sequence')}</p>
+        {/* Right: Coaching Panel — 2/3 of page on Desktop */}
+        <div className="flex flex-col w-full lg:w-2/3">
+
+          {/* ── Section 1: Readiness Score ────────────────────── */}
+          <div className="border border-zinc-200 p-4">
+            {readinessScore !== null ? (
+              <>
+                {/* Top row: label + score + mention */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                  <span className="text-xs text-zinc-600 font-bold font-mono uppercase">{getReadinessMention(readinessScore)}</span>
+                </div>
+
+                {/* Big score */}
+                <div className="flex items-baseline gap-1.5 mb-3">
+                  <span className="text-3xl md:text-4xl font-black tabular-nums tracking-tighter leading-none">{readinessScore}</span>
+                  <span className="text-lg font-black text-zinc-300">/100</span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="relative w-full h-1.5 bg-zinc-100 mb-1.5">
+                  <div 
+                    className="absolute top-0 left-0 h-full bg-black transition-all duration-700 ease-out"
+                    style={{ width: `${Math.min(readinessScore, 100)}%` }}
+                  />
+                  <div className="absolute top-0 h-full w-px bg-zinc-300" style={{ left: '85%' }} />
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-[9px] text-zinc-400 font-mono tracking-wide">cible: 85+</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                <div className="flex items-baseline gap-1.5 mt-2 mb-2">
+                  <span className="text-3xl font-black tabular-nums tracking-tighter leading-none text-zinc-200">—</span>
+                  <span className="text-lg font-black text-zinc-100">/100</span>
+                </div>
+                <div className="w-full h-1.5 bg-zinc-50" />
+                <p className="text-[10px] text-zinc-400 font-mono mt-3">Lance ta première simulation</p>
+              </>
+            )}
+          </div>
+
+          {/* ── Section 2: Past Question Flashcard ────────────── */}
+          <div className="border border-t-0 border-zinc-200 p-4 bg-zinc-50/30">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-6 h-6 rounded-full border border-black overflow-hidden bg-white shrink-0 shadow-sm">
+                <Image
+                  src={selectedJury.avatar}
+                  alt={selectedJury.name}
+                  width={24}
+                  height={24}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-600 uppercase font-black tracking-[0.2em] font-mono">Daily Review</span>
+                <span className="text-[10px] text-zinc-400 font-mono italic">• {selectedJury.name} ({selectedJury.role})</span>
+              </div>
             </div>
-          )}
+
+            {pastQuestion ? (
+              <p className="text-sm font-serif italic text-zinc-800 leading-relaxed pl-3 border-l-2 border-black py-1">
+                "{pastQuestion}"
+              </p>
+            ) : (
+              <div className="flex items-center gap-2 text-zinc-400">
+                <MessageCircle className="w-4 h-4" />
+                <p className="text-[11px] font-mono">Simule pour débloquer les questions flash</p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Section 3: Session Gap Recovery ──────────────── */}
+          <div className="border border-t-0 border-zinc-200 p-4">
+            <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">Performance</span>
+
+            {hasSessionData ? (
+              <div className="mt-4">
+                <div className="space-y-3 mb-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">Meilleure</span>
+                    <span className="text-sm font-black tabular-nums">{bestScore}/20</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">Dernière session</span>
+                    <div className="flex items-center gap-3">
+                      {gap > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-zinc-100 text-zinc-500 font-mono font-bold">-{gap}pts</span>
+                      )}
+                      <span className="text-sm font-black tabular-nums">{lastGrade}/20</span>
+                    </div>
+                  </div>
+                </div>
+
+                {gap > 0 && (
+                  <p className="text-[11px] text-zinc-600 font-medium font-mono mb-4 border-l-2 border-zinc-100 pl-3 italic">
+                    {gap === 1 ? 'Ce point est récupérable' : `Ces ${gap} points sont récupérables`}
+                  </p>
+                )}
+
+                <button
+                  onClick={onNavigateToDefense}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-black text-white text-[11px] font-bold font-mono uppercase tracking-widest hover:bg-zinc-800 transition-colors cursor-pointer group"
+                >
+                  <span>Simuler maintenant</span>
+                  <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 text-zinc-300">
+                <TrendingDown className="w-4 h-4" />
+                <p className="text-[11px] font-mono">Aucune session enregistrée</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

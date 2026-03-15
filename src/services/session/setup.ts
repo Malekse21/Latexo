@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { groqChat, GROQ_MODEL_FAST } from '../../config/groq';
-import { saveSession, sessionExists } from '../../lib/session/state';
+import { saveSession, sessionExists, deleteSession, getSession } from '../../lib/session/state';
 import { AGENTS } from '../../config/agents';
 import {
   SessionDuration,
@@ -23,14 +23,25 @@ function getAdminClient() {
 export async function startSession(
   userId: string,
   reportId: string,
-  durationMinutes: SessionDuration
+  durationMinutes: SessionDuration,
+  difficulty: "gentle" | "standard" | "hostile" = "standard"
 ): Promise<StartSessionResponse> {
   const supabase = getAdminClient();
 
-  // ── Step 1: Check no active session ──────────────────
+  // ── Step 1: Check and clear any active session ───────
   const hasActive = await sessionExists(userId);
   if (hasActive) {
-    throw new Error('SESSION_ALREADY_ACTIVE');
+    // Before nuking the live session, let's mark its dangling DB row as ABORTED (optional, but clean)
+    const oldSession = await getSession(userId);
+    if (oldSession?.sessionId) {
+      await supabase
+        .from('simulations')
+        .update({ status: 'ABORTED' })
+        .eq('id', oldSession.sessionId);
+    }
+    // Delete the Redis/Live block
+    await deleteSession(userId);
+    console.log(`Cleared stale session for user ${userId}. Starting fresh.`);
   }
 
   // ── Step 2: Check and deduct credits ──────────────────
@@ -56,47 +67,86 @@ export async function startSession(
   // ── Step 3: Load report and weak topics ───────────────
   const { data: report, error: reportError } = await supabase
     .from('reports')
-    .select('data, title, extracted_text')
+    .select('data, title, extracted_text, past_questions')
     .eq('id', reportId)
     .single();
 
   if (reportError || !report) throw new Error('REPORT_NOT_FOUND');
 
-  // Build PdfContext from existing report skeleton data
+  // Build PdfContext from the new DNA skeleton schema
   const skeleton = report.data || {};
+  const ch1 = skeleton.chapter_1_context_and_problem || {};
+  const ch2 = skeleton.chapter_2_requirements || {};
+  const ch3 = skeleton.chapter_3_conceptual_study || {};
+  const ch4 = skeleton.chapter_4_realization || {};
+  const devEnv = ch4.development_environment || {};
+
+  // Build sections array from each chapter's key content
+  const sections: { name: string; summary: string }[] = [
+    {
+      name: 'Context & Problem',
+      summary: [ch1.core_problem, ch1.proposed_solution].filter(Boolean).join(' — ') || '',
+    },
+    {
+      name: 'Requirements',
+      summary: (ch2.functional_requirements || []).slice(0, 5).join(', ') || '',
+    },
+    {
+      name: 'Conceptual Study',
+      summary: [
+        ch3.overall_architecture,
+        ...(ch3.static_view_class_diagram || []).slice(0, 3),
+      ].filter(Boolean).join(', ') || '',
+    },
+    {
+      name: 'Realization',
+      summary: (ch4.developed_interfaces || []).slice(0, 5).join(', ') || '',
+    },
+  ];
+
   const pdfContext: PdfContext = {
     title: skeleton.project_meta?.title || report.title || 'Untitled Project',
-    domain: skeleton.logic_chain?.problem || 'General',
-    methodology: skeleton.logic_chain?.solution || '',
-    technologies: skeleton.technical_fingerprint?.stack || [],
-    sections: (skeleton.chapter_map || []).map((ch: any) => ({
-      name: ch.title || '',
-      summary: ch.summary || '',
-      weaknessScore: 0.5,
-    })),
-    potentialGaps: skeleton.simulation_hooks?.vulnerabilities || [],
-    keyFindings: skeleton.simulation_hooks?.critical_questions || [],
+    domain: ch1.core_problem || 'General',
+    methodology: skeleton.project_meta?.methodology || '',
+    technologies: [
+      ...(devEnv.frontend_stack || []),
+      ...(devEnv.backend_stack || []),
+      devEnv.database,
+    ].filter(Boolean),
+    sections,
+    potentialGaps: [
+      ...(ch1.critique_of_existing || []),
+    ],
   };
 
-  // Load weak topics from profile
+  // Load memory from profile
   const { data: profileData } = await supabase
     .from('profiles')
-    .select('weak_topics, memory')
+    .select('memory')
     .eq('id', userId)
     .single();
 
-  // weak_topics is a JSONB array of {topic, score} objects
-  const weakTopicsRaw: any[] = profileData?.weak_topics || [];
-  const weakTopicNames: string[] = weakTopicsRaw.map((w: any) =>
-    typeof w === 'string' ? w : w.topic
-  ).filter(Boolean);
+  // Fetch the latest simulation's memory_snapshot for adaptive questions
+  const { data: latestSim } = await supabase
+    .from('simulations')
+    .select('memory_snapshot')
+    .eq('user_id', userId)
+    .not('memory_snapshot', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  const memorySnapshot: string = latestSim?.memory_snapshot || '';
 
   // ── Step 4: Generate question bank (1 AI call) ────────
   const totalTurns = TURN_COUNT[durationMinutes];
+  const pastQuestions: string[] = report.past_questions || [];
   const questionBank = await generateQuestionBank(
     pdfContext,
-    weakTopicNames,
-    totalTurns
+    memorySnapshot,
+    totalTurns,
+    pastQuestions,
+    difficulty
   );
 
   // ── Step 5: Create simulation in Supabase ─────────────
@@ -122,7 +172,6 @@ export async function startSession(
     userId,
     reportId,
     pdfContext,
-    weakTopics: weakTopicNames,
     questionBank,
     questionsAskedIds: [],
     questionsAskedTexts: [],
@@ -165,19 +214,34 @@ export async function startSession(
 // ── Question Bank Generator ────────────────────────────────
 async function generateQuestionBank(
   pdfContext: PdfContext,
-  weakTopics: string[],
-  totalTurns: number
+  memorySnapshot: string,
+  totalTurns: number,
+  pastQuestions: string[] = [],
+  difficulty: "gentle" | "standard" | "hostile" = "standard"
 ): Promise<GeneratedQuestion[]> {
 
-  // Distribute questions across agents
-  // Agent 0 (Malek):   40% — methodology focus
-  // Agent 1 (Souad):   40% — technical focus
-  // Agent 2 (Amir):    20% — research/big picture
+  // Distribute questions evenly across agents (balanced talking turns)
+  // Agent 0 (Malek):  ~1/3 — technical focus
+  // Agent 1 (Souad):  ~1/3 — academic/methodology focus
+  // Agent 2 (Amir):   ~1/3 — business/research focus
+  const perAgent = Math.floor(totalTurns / 3);
+  const remainder = totalTurns % 3;
   const counts = {
-    0: Math.ceil(totalTurns * 0.4),
-    1: Math.ceil(totalTurns * 0.4),
-    2: Math.floor(totalTurns * 0.2),
+    0: perAgent + (remainder >= 1 ? 1 : 0),
+    1: perAgent + (remainder >= 2 ? 1 : 0),
+    2: perAgent,
   };
+
+  // Determine distribution based on selected difficulty
+  let difficultyDistribution = "";
+  if (difficulty === "gentle") {
+    difficultyDistribution = "~70% easy, ~30% medium, 0% hard";
+  } else if (difficulty === "hostile") {
+    difficultyDistribution = "~10% easy, ~40% medium, ~50% hard";
+  } else {
+    // Standard
+    difficultyDistribution = "~30% easy, ~50% medium, ~20% hard";
+  }
 
   const prompt = `
 You are generating questions for a PFE thesis defense simulation.
@@ -189,26 +253,28 @@ Technologies: ${pdfContext.technologies.join(', ')}
 
 Sections:
 ${pdfContext.sections.map(s =>
-  `- ${s.name}: ${s.summary} [weakness: ${
-    s.weaknessScore > 0.6 ? 'HIGH' :
-    s.weaknessScore > 0.3 ? 'MEDIUM' : 'LOW'
-  }]`
+  `- ${s.name}: ${s.summary}`
 ).join('\n')}
 
 Gaps detected: ${pdfContext.potentialGaps.join(' | ')}
-Weak topics from last session: ${weakTopics.join(', ') || 'none'}
+${memorySnapshot ? `AI evaluation note from last session: "${memorySnapshot}"
+Use this note to prioritize questions on areas where the student previously struggled.` : 'This is the student\'s first simulation.'}
 
+${pastQuestions.length > 0 ? `PREVIOUSLY ASKED QUESTIONS ACROSS PAST SIMULATIONS (DO NOT REPEAT THESE):
+${pastQuestions.map((q, i) => `${i + 1}. "${q}"`).join('\n')}
+` : ''}
 Generate exactly ${totalTurns} questions split across 3 agents:
-- Agent 0 (Malek, methodology): ${counts[0]} questions
-- Agent 1 (Souad, technical): ${counts[1]} questions  
-- Agent 2 (Amir, research): ${counts[2]} questions
+- Agent 0 (Malek, technical): ${counts[0]} questions — architecture, databases, APIs, security, deployment
+- Agent 1 (Souad, academic): ${counts[1]} questions — methodology, UML, report structure, academic rigor
+- Agent 2 (Amir, business): ${counts[2]} questions — market viability, ROI, competitive analysis, user needs
 
 Rules:
-1. Mix difficulties: ~30% easy, ~50% medium, ~20% hard
-2. Prioritize HIGH weakness sections for medium/hard questions
-3. Prioritize weak topics from last session
-4. Each question must be answerable from the project context
-5. Questions must be realistic jury questions — direct, under 2 sentences
+1. Mix difficulties: ${difficultyDistribution}
+2. If an AI evaluation note is provided, generate harder questions targeting those weak areas
+3. Each question must be answerable from the project context
+4. Questions must be realistic jury questions — direct, under 2 sentences
+5. CRITICAL: Generate entirely NEW questions. Do NOT ask any question that is semantically similar to the PREVIOUSLY ASKED QUESTIONS listed above
+6. CRITICAL: Interleave the agent IDs so talking turns alternate naturally (e.g. 0,1,2,0,1,2,...). Do NOT group all questions from one agent together
 
 Return ONLY a valid JSON object with a "questions" array:
 {"questions": [{
