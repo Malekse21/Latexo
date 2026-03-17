@@ -151,33 +151,31 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    console.log("🔴 Logout initiated...");
-    
     // PostHog: Reset user identity
     posthog.reset();
     
-    // 1. Clear application state IMMEDIATELY (synchronous)
+    // 1. Destroy the Supabase session server-side FIRST
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Supabase signOut error:", err);
+    }
+    
+    // 2. Clear application state
     setUser(null);
     setSession(null);
     setProfile(null);
     
-    // 2. Clear storage IMMEDIATELY (synchronous)
+    // 3. Nuke local storage so no stale tokens survive
     try {
       localStorage.clear();
       sessionStorage.clear();
     } catch (e) {
-      console.warn("Storage clear failed:", e);
+      // silent
     }
     
-    console.log("✅ Local state cleared, redirecting NOW...");
-    
-    // 3. Redirect IMMEDIATELY (don't wait for anything)
+    // 4. Hard redirect to landing page (bypasses Next.js client cache)
     window.location.href = "/";
-    
-    // 4. Sign out from Supabase in the background (this happens after redirect starts)
-    supabase.auth.signOut().catch((err) => {
-      console.error("Background signOut error (ignored):", err);
-    });
   };
 
   return (

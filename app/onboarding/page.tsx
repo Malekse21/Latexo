@@ -305,10 +305,21 @@ export default function OnboardingPage() {
         
         if (error) throw error;
         
-        // Redirect to dashboard — hard navigation so middleware re-evaluates fresh profile
-        setTimeout(() => {
-          window.location.href = '/dashboard';
-        }, 1000);
+        // Verify the write landed — prevents middleware from seeing stale data
+        const { data: verifyProfile } = await supabase
+          .from('profiles')
+          .select('university')
+          .eq('id', user.id)
+          .single();
+        
+        if (!verifyProfile?.university) {
+          throw new Error('Profile update did not persist');
+        }
+        
+        // Brief pause for the workspace animation, then hard redirect.
+        // Using replace() so the user can't back-button into onboarding.
+        await new Promise((r) => setTimeout(r, 800));
+        window.location.replace('/dashboard');
       } catch (error) {
         console.error('Error saving profile:', error);
         setIsSubmitting(false);
