@@ -103,7 +103,7 @@ function DashboardContent() {
          setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
        }
     }
-  }, [profile?.active_report_id, language]);
+  }, [profile?.id, profile?.active_report_id, language]);
 
   // ─── Readiness Score helpers ───────────────────────────────────
   const getSessionVolume = (sessions: number): number => {

@@ -151,31 +151,32 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    // PostHog: Reset user identity
-    posthog.reset();
-    
-    // 1. Destroy the Supabase session server-side FIRST
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error("Supabase signOut error:", err);
-    }
-    
-    // 2. Clear application state
+    // 1. Optimistic UI updates for immediate feedback
     setUser(null);
     setSession(null);
     setProfile(null);
+    posthog.reset();
     
-    // 3. Nuke local storage so no stale tokens survive
+    // 2. Instant client-side navigation to landing page
+    router.push("/");
+    
+    // 3. Perform the actual logout in the background
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Supabase signOut error (background):", err);
+    }
+    
+    // 4. Ensure all stale storage is nuked
     try {
       localStorage.clear();
       sessionStorage.clear();
     } catch (e) {
       // silent
     }
-    
-    // 4. Hard redirect to landing page (bypasses Next.js client cache)
-    window.location.href = "/";
+
+    // 5. Refresh the router to update any Server Components mapped to the auth state
+    router.refresh();
   };
 
   return (

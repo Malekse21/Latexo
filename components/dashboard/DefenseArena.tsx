@@ -1262,11 +1262,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="w-full h-full p-6 flex items-center justify-center relative"
+            className="w-full h-full px-4 md:px-6 py-6 flex items-start md:items-center justify-center relative overflow-y-auto"
           >
-            <div className="max-w-3xl w-full">
+            <div className="max-w-3xl w-full my-auto">
               <div className="mb-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                   <h2 className="text-2xl md:text-3xl font-semibold font-serif text-gray-900 tracking-tight">
                     {t('simulation.setup')}
                   </h2>
