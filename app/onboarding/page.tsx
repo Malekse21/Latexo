@@ -305,9 +305,9 @@ export default function OnboardingPage() {
         
         if (error) throw error;
         
-        // Redirect to dashboard
+        // Hard redirect to dashboard to force middleware to re-evaluate the updated profile
         setTimeout(() => {
-          router.push('/dashboard');
+          window.location.href = '/dashboard';
         }, 1000);
       } catch (error) {
         console.error('Error saving profile:', error);
