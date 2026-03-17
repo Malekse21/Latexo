@@ -305,7 +305,7 @@ export default function OnboardingPage() {
         
         if (error) throw error;
         
-        // Hard redirect to dashboard to force middleware to re-evaluate the updated profile
+        // Redirect to dashboard — hard navigation so middleware re-evaluates fresh profile
         setTimeout(() => {
           window.location.href = '/dashboard';
         }, 1000);
