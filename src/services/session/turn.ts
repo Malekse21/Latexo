@@ -124,8 +124,6 @@ export async function processTurn(
     topic: currentQuestion.topic,
     difficulty: currentQuestion.difficulty,
     keywords: currentQuestion.keywords,
-    followUp: null,
-    triggerCondition: 'always',
   };
 
   await updateSession(userId, {
@@ -135,7 +133,7 @@ export async function processTurn(
     lastAnswers: updatedLastAnswers,
     questionsAskedIds: updatedAskedIds,
     questionsAskedTexts: updatedAskedTexts,
-    followUpUsed: isFollowUp,
+    followUpsCount: isFollowUp ? session.followUpsCount + 1 : 0,
     adaptiveCallsUsed: session.adaptiveCallsUsed,
   });
 
@@ -166,8 +164,12 @@ async function decideNextAction(
   nextAgentId: AgentId;
 }> {
 
-  // ── PATH A: Weak answer + followup not yet used ────────
-  if (weak && !session.followUpUsed) {
+  // Difficulty mapping for max follow-ups
+  const maxMap = { gentle: 1, standard: 2, hostile: 3 };
+  const maxFollowUps = maxMap[session.difficulty] ?? 2;
+
+  // ── PATH A: Weak answer + followup slot available ────────
+  if (weak && session.followUpsCount < maxFollowUps) {
     const lastAnswer = session.lastAnswers[session.lastAnswers.length - 1];
     const followUp = await generateFollowUp(
       session.currentQuestion!.question,

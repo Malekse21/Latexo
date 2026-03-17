@@ -27,6 +27,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.4.530",
+    "posthog-js": "^1.360.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",

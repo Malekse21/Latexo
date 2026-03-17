@@ -54,8 +54,6 @@ export interface GeneratedQuestion {
   topic: string;
   difficulty: 'easy' | 'medium' | 'hard';
   keywords: string[];
-  followUp: string | null;
-  triggerCondition: 'always' | 'if_weak' | 'if_strong';
 }
 
 // ── Turn ──────────────────────────────────────────────────
@@ -94,8 +92,9 @@ export interface LiveSession {
   currentQuestion: GeneratedQuestion | null;
   currentAgentId: AgentId;
   turnCount: number;
-  followUpUsed: boolean;        // one followup per question max
+  followUpsCount: number;       // tracks follow-ups for the current question
   adaptiveCallsUsed: number;    // max 1 per session
+  difficulty: "gentle" | "standard" | "hostile";
 
   // Session config
   durationMinutes: SessionDuration;

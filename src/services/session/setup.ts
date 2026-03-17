@@ -180,8 +180,9 @@ export async function startSession(
     currentQuestion: firstQuestion,
     currentAgentId: 0,         // always start with Malek
     turnCount: 0,
-    followUpUsed: false,
+    followUpsCount: 0,
     adaptiveCallsUsed: 0,
+    difficulty,
     durationMinutes,
     totalTurns,
     startedAt: Date.now(),
@@ -283,15 +284,9 @@ Return ONLY a valid JSON object with a "questions" array:
   "question": "...",
   "topic": "Methodology",
   "difficulty": "medium",
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "followUp": "follow-up question if answer is weak, or null",
-  "triggerCondition": "always"
+  "keywords": ["keyword1", "keyword2", "keyword3"]
 }]}
 
-triggerCondition values:
-- "always"    → ask regardless of previous answer
-- "if_weak"   → only ask if previous answer score < 60
-- "if_strong" → only ask if previous answer score >= 75
 `;
 
   const content = await groqChat({

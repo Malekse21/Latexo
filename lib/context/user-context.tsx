@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
+import { posthog } from "@/components/providers/posthog-provider";
 
 interface Profile {
   id: string;
@@ -126,6 +127,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         
         if (currentSession?.user) {
           await fetchProfile(currentSession.user.id);
+
+          // PostHog: Identify user on login/signup
+          posthog.identify(currentSession.user.id, {
+            email: currentSession.user.email,
+            name: currentSession.user.user_metadata?.full_name,
+          });
+
+          if (event === 'SIGNED_IN') {
+            posthog.capture('user_logged_in');
+          }
         } else {
           setProfile(null);
         }
@@ -141,6 +152,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     console.log("🔴 Logout initiated...");
+    
+    // PostHog: Reset user identity
+    posthog.reset();
     
     // 1. Clear application state IMMEDIATELY (synchronous)
     setUser(null);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { logGroqCost } from "@/src/config/groq";
 import { getSession, deleteSession } from "@/src/lib/session/state";
 
 interface TranscriptMessage {
@@ -117,6 +118,10 @@ Output Format (Strict JSON only, no markdown, no explanation):
 
   const data = await response.json();
   let content = data.choices?.[0]?.message?.content;
+  
+  if (data.usage) {
+    logGroqCost("Session Evaluation", data.usage.prompt_tokens, data.usage.completion_tokens, "llama-3.3-70b-versatile");
+  }
 
   if (!content) {
     throw new Error("No response from Groq");

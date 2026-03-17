@@ -1,10 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useUser } from "@/lib/context/user-context";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { posthog } from "@/components/providers/posthog-provider";
 import { UploadModal } from "@/components/dashboard/UploadModal";
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
@@ -44,7 +46,7 @@ function DashboardContent() {
   const [readinessScore, setReadinessScore] = useState<number | null>(null);
   const [projectedScore, setProjectedScore] = useState<number | null>(null);
   const [lastGrade, setLastGrade] = useState<number | null>(null);
-  const [pastQuestion, setPastQuestion] = useState<string | null>(null);
+  const [memorySnapshot, setMemorySnapshot] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -63,6 +65,11 @@ function DashboardContent() {
     } else {
       setActiveTab(tab);
       router.push(`/dashboard?tab=${tab}`);
+
+      // PostHog: Track simulation start
+      if (tab === 'defense') {
+        posthog.capture('simulation_started');
+      }
     }
   };
 
@@ -72,6 +79,7 @@ function DashboardContent() {
     
     fetchActiveReport();
     fetchReadinessData();
+    fetchMemorySnapshot();
     
     // Time-based greeting logic
     const hour = new Date().getHours();
@@ -99,10 +107,9 @@ function DashboardContent() {
 
   // ─── Readiness Score helpers ───────────────────────────────────
   const getSessionVolume = (sessions: number): number => {
-    // sessions 3-8: micro increments from 35 → 100
+    // sessions 0-8: linear scale from 0 → 100
     const capped = Math.min(sessions, 8);
-    const remaining = capped - 2; // 1-6
-    return 35 + (remaining / 6) * 65;
+    return Math.round((capped / 8) * 100);
   };
 
   const getRecencyScore = (daysSinceLast: number): number => {
@@ -113,6 +120,8 @@ function DashboardContent() {
   };
 
   const computeReadiness = (avgScoreNorm: number, sessionVol: number, recency: number) => {
+    // If no sessions, return 0 to avoid NaNs or skewed results
+    if (sessionVol === 0) return 0;
     return Math.round(avgScoreNorm * 0.50 + sessionVol * 0.35 + recency * 0.15);
   };
 
@@ -125,37 +134,7 @@ function DashboardContent() {
       const totalSessions = profile?.total_sessions || 0;
       const lastSession = profile?.last_session;
 
-      // Sessions 0-2: fixed readiness values, no formula needed
-      if (totalSessions === 0) {
-        setReadinessScore(0);
-        setProjectedScore(20);
-        return;
-      }
-      if (totalSessions === 1) {
-        setReadinessScore(20);
-        setProjectedScore(35);
-        return;
-      }
-      if (totalSessions === 2) {
-        setReadinessScore(35);
-        // Project what session 3 would give with the formula
-        const { data: recentSims } = await supabase
-          .from('simulations')
-          .select('final_grade, created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(3);
-        let avgScoreNorm = 0;
-        if (recentSims && recentSims.length > 0) {
-          const avg = recentSims.reduce((sum: number, s: any) => sum + (s.final_grade || 0), 0) / recentSims.length;
-          avgScoreNorm = (avg / 20) * 100;
-        }
-        const proj = computeReadiness(avgScoreNorm, getSessionVolume(3), 100);
-        setProjectedScore(proj);
-        return;
-      }
-
-      // Session 3+: use the full formula
+      // Calculate for all users using the uniform formula
       const { data: recentSims } = await supabase
         .from('simulations')
         .select('final_grade, created_at')
@@ -170,23 +149,24 @@ function DashboardContent() {
         avgScoreNorm = (avg / 20) * 100;
       }
 
-      // Session Volume (micro gains from 35 → 100)
+      // Session Volume (0 → 100 mapping)
       const sessionVol = getSessionVolume(totalSessions);
 
       // Recency
-      let recency = 10;
+      let recency = 0; // default to 0 if no sessions
       if (lastSession) {
-        const daysSince = Math.floor((Date.now() - new Date(lastSession).getTime()) / (1000 * 60 * 60 * 24));
-        recency = getRecencyScore(daysSince);
+        const days = Math.floor((new Date().getTime() - new Date(lastSession).getTime()) / (1000 * 3600 * 24));
+        recency = getRecencyScore(days);
       }
 
       const score = computeReadiness(avgScoreNorm, sessionVol, recency);
       setReadinessScore(score);
 
-      // Projected: simulate today → recency = 100, session +1
-      const projSessionVol = getSessionVolume(totalSessions + 1);
-      const proj = computeReadiness(avgScoreNorm, projSessionVol, 100);
-      setProjectedScore(proj);
+      // Projected next score (assuming they do another session and get average marks)
+      const nextSessionVol = getSessionVolume(totalSessions + 1);
+      // Assume recency is 100 since they would have just done a new session
+      const proj = computeReadiness(avgScoreNorm, nextSessionVol, 100);
+      setProjectedScore(proj > score ? proj : score + 5); // Add slight bump to motivate if projection drops
 
       // Last grade (most recent simulation)
       if (recentSims && recentSims.length > 0) {
@@ -234,17 +214,35 @@ function DashboardContent() {
         
         setActiveReport({ ...reportData, language });
         setSelectedReport({ ...reportData, language });
-
-        // Pick a random past question from this report
-        const questions: string[] = reportData.past_questions || [];
-        if (questions.length > 0) {
-          setPastQuestion(questions[Math.floor(Math.random() * questions.length)]);
-        }
       }
     } catch (error) {
       console.error('Error fetching report:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMemorySnapshot = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: latestSim } = await supabase
+        .from('simulations')
+        .select('memory_snapshot')
+        .eq('user_id', user.id)
+        .eq('status', 'COMPLETED')
+        .not('memory_snapshot', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (latestSim?.memory_snapshot) {
+        setMemorySnapshot(latestSim.memory_snapshot);
+      }
+    } catch (error) {
+      // Non-fatal — first-time users won't have any simulations
     }
   };
 
@@ -263,6 +261,9 @@ function DashboardContent() {
   const handleSimulationComplete = (simId: string) => {
     setSimulationId(simId);
     setActiveTab('aftermath');
+
+    // PostHog: Track simulation completion
+    posthog.capture('simulation_completed', { simulation_id: simId });
   };
 
   // derived state for header
@@ -280,37 +281,59 @@ function DashboardContent() {
       />
 
       {/* Tab Content */}
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <AnimatePresence mode="wait">
         {(activeTab === 'briefing' || activeTab === null) && (
-          <CardsView 
-            profile={profile}
-            activeReport={activeReport}
-            greeting={dynamicGreeting}
-            daysUntilDefense={daysUntilDefense}
-            readinessScore={readinessScore}
-            projectedScore={projectedScore}
-            lastGrade={lastGrade}
-            pastQuestion={pastQuestion}
-            onUploadClick={() => setShowUploadModal(true)}
-            onNavigateToDefense={() => handleTabChange('defense')}
-            t={t}
-          />
+          <motion.div
+            key="briefing"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+          >
+            <CardsView 
+              profile={profile}
+              activeReport={activeReport}
+              greeting={dynamicGreeting}
+              daysUntilDefense={daysUntilDefense}
+              readinessScore={readinessScore}
+              projectedScore={projectedScore}
+              lastGrade={lastGrade}
+              memorySnapshot={memorySnapshot}
+              onUploadClick={() => setShowUploadModal(true)}
+              onNavigateToDefense={() => handleTabChange('defense')}
+              t={t}
+            />
+          </motion.div>
         )}
 
         {/* Defense Room - Live Simulation */}
         {activeTab === 'defense' && (
-          <div className="h-[calc(100vh-140px)]">
+          <motion.div
+            key="defense"
+            className="h-[calc(100vh-140px)]"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+          >
             <DefenseArena 
               onSimulationComplete={handleSimulationComplete}
               reportId={activeReport?.id}
               initialLanguage={activeReport?.language as "french" | "english" | "mixed"}
             />
-          </div>
+          </motion.div>
         )}
 
         {/* Aftermath - Results Dashboard */}
         {activeTab === 'aftermath' && (
-          <div className="h-[calc(100vh-140px)]">
+          <motion.div
+            key="aftermath"
+            className="h-[calc(100vh-140px)]"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+          >
             {simulationId ? (
               <AftermathDashboard simulationId={simulationId} />
             ) : (
@@ -327,9 +350,9 @@ function DashboardContent() {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       <UploadModal
         isOpen={showUploadModal}

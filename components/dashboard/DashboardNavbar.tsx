@@ -68,9 +68,9 @@ export function DashboardNavbar() {
       {/* Right: Profile */}
       <div className="flex items-center gap-3">
         {/* Streak Badge */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-50 border border-orange-200 rounded-lg shadow-sm">
-          <span className="text-orange-500 font-bold text-xs">🔥</span>
-          <span className="text-sm font-black text-orange-600 font-mono leading-none">{profile?.current_streak ?? 0}</span>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-black rounded-sm shadow-sm">
+          <span className="text-white text-xs">🔥</span>
+          <span className="text-sm font-black text-white font-mono leading-none tracking-widest">{profile?.current_streak ?? 0}</span>
         </div>
 
         <div className="relative" ref={profileMenuRef}>

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getSession, updateSession } from "@/src/lib/session/state";
 import { GeneratedQuestion } from "@/src/types/session";
+import { LiveSession } from "@/src/types/session";
+import { AGENTS } from "@/src/config/agents";
+import { logGroqCost } from "@/src/config/groq";
 
 // ── Agent-ID ↔ Speaker mapping ──────────────────────────────
 const AGENT_TO_SPEAKER: Record<number, string> = {
@@ -66,7 +69,8 @@ function buildGatekeeperPrompt(
   difficulty: "gentle" | "standard" | "hostile",
   currentAgendaItem: string,
   nextAgendaItem: string | null,
-  agentSpeaker: string
+  agentSpeaker: string,
+  followUpsCount: number
 ): string {
   const languageName = language === "french" ? "French" : "English";
 
@@ -81,6 +85,21 @@ function buildGatekeeperPrompt(
     ? `Seamlessly pivot to the next topic: "${nextAgendaItem}".`
     : `Wrap up gracefully — there are no more topics on the agenda.`;
 
+  const limits = { gentle: 1, standard: 2, hostile: 3 };
+  const maxFollowUps = limits[difficulty] || 2;
+  const isExhausted = followUpsCount >= maxFollowUps;
+
+  // Dynamically tailor the instructions based on whether they hit the limit
+  let followupInstructions = "";
+  if (isExhausted) {
+    followupInstructions = `CRITICAL LIMIT REACHED: You have already asked ${followUpsCount} follow-up questions for this topic. You are strictly forbidden from asking any more follow-up questions. You MUST acknowledge the student's final answer, ${pivotInstruction} and set topic_status to "exhausted".`;
+  } else {
+    followupInstructions = `1. Evaluate the student's answer against the CURRENT TOPIC above.
+2. Did they answer it satisfactorily?
+   - IF NO: Ask ONE focused follow-up question related SOLELY to this topic. You have asked ${followUpsCount}/${maxFollowUps} follow-ups so far. Set topic_status to "ongoing".
+   - IF YES: Acknowledge their answer briefly, then ${pivotInstruction} Set topic_status to "exhausted".`;
+  }
+
   return `${personaPrompt}
 
 You are the gatekeeper for the CURRENT agenda item below. Your job is to evaluate whether the student has satisfactorily answered this specific topic before moving on.
@@ -93,10 +112,7 @@ CRITICAL LANGUAGE RULE: Respond ONLY in ${languageName.toUpperCase()}.
 ${curveball}
 
 INSTRUCTIONS:
-1. Evaluate the student's answer against the CURRENT TOPIC above.
-2. Did they answer it satisfactorily?
-   - IF NO: Ask ONE focused follow-up question related SOLELY to this topic. Set topic_status to "ongoing".
-   - IF YES: Acknowledge their answer briefly, then ${pivotInstruction} Set topic_status to "exhausted".
+${followupInstructions}
 
 SPEAKING STYLE:
 - Respond in 60 to 80 words. Be thorough but not verbose.
@@ -185,7 +201,8 @@ export async function POST(request: NextRequest) {
       difficulty,
       currentAgendaItem,
       nextAgendaItem,
-      currentSpeaker
+      currentSpeaker,
+      session.followUpsCount || 0
     );
 
     const userPrompt = `Recent Conversation:
@@ -235,6 +252,10 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
     // ── Parse AI response ─────────────────────────────────
     const aiData = await response.json();
     let content = aiData.choices?.[0]?.message?.content;
+    
+    if (aiData.usage) {
+      logGroqCost("Chat Turn", aiData.usage.prompt_tokens, aiData.usage.completion_tokens, AI_MODEL);
+    }
 
     if (!content) {
       console.error("Groq returned empty content", aiData);
@@ -286,16 +307,17 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
           currentQuestion.question,
         ],
         turnCount: session.turnCount + 1,
-        followUpUsed: false,
+        followUpsCount: 0,
       });
     } else if (topicStatus === "ongoing") {
-      // Same topic, just increment turn
+      // Same topic, just increment turn and follow-up counter
       console.log(
-        `[Agenda] Topic ongoing: "${currentAgendaItem}" — follow-up turn`
+        `[Agenda] Topic ongoing: "${currentAgendaItem}" — follow-up turn (${(session.followUpsCount || 0) + 1})`
       );
 
       await updateSession(user.id, {
         turnCount: session.turnCount + 1,
+        followUpsCount: (session.followUpsCount || 0) + 1,
         lastAnswers: [
           ...session.lastAnswers.slice(-2),
           { question: currentAgendaItem, answer: student_message },
@@ -313,6 +335,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
           currentQuestion.question,
         ],
         turnCount: session.turnCount + 1,
+        followUpsCount: 0,
       });
     }
 

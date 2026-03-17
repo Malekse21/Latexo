@@ -75,18 +75,12 @@ const LOADING_MESSAGES = [
   "Identifying 4 methodological vulnerabilities...",
 ];
 
-const DELIBERATION_MESSAGES = [
-  "Analyzing technical responses...",
-  "Reviewing methodology & structure...",
-  "Assessing business viability...",
-  "Calculating final grade...",
-];
-
-const DIFFICULTY_CARDS = [
+// These will be populated with t() inside the component
+const DIFFICULTY_CARD_META = [
   {
     id: "gentle" as Difficulty,
-    title: "Gentle",
-    description: "Supportive, focuses on clarity",
+    titleKey: "simulation.difficulty_gentle",
+    descKey: "simulation.difficulty_gentle_desc",
     icon: Shield,
     color: "text-blue-500",
     bgAccent: "bg-blue-50",
@@ -94,8 +88,8 @@ const DIFFICULTY_CARDS = [
   },
   {
     id: "standard" as Difficulty,
-    title: "Standard",
-    description: "Professional, realistic academic standards",
+    titleKey: "simulation.difficulty_standard",
+    descKey: "simulation.difficulty_standard_desc",
     icon: Swords,
     color: "text-gray-700",
     bgAccent: "bg-gray-50",
@@ -103,8 +97,8 @@ const DIFFICULTY_CARDS = [
   },
   {
     id: "hostile" as Difficulty,
-    title: "Hostile",
-    description: "Aggressive, looks for contradictions",
+    titleKey: "simulation.difficulty_hostile",
+    descKey: "simulation.difficulty_hostile_desc",
     icon: Flame,
     color: "text-red-500",
     bgAccent: "bg-red-50",
@@ -1168,26 +1162,39 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const JURY_MEMBERS = [
     {
       name: "Malek",
-      title: "THE TECHNICAL EXPERT",
-      subtitle: "Focus: System Architecture, Code Efficiency, and Technical Choices.",
+      title: t('simulation.jury_title_technical'),
+      subtitle: t('simulation.jury_subtitle_technical'),
       bgColor: "bg-cyan-100",
       imagePath: "/jury/technical-expert.png",
     },
     {
       name: "Souad",
-      title: "THE STRICT ACADEMIC",
-      subtitle: "Focus: Research Methodology, Structural Compliance, and Formal Logic.",
+      title: t('simulation.jury_title_academic'),
+      subtitle: t('simulation.jury_subtitle_academic'),
       bgColor: "bg-purple-100",
       imagePath: "/jury/strict-academic.png",
     },
     {
       name: "Amir",
-      title: "THE BUSINESS STRATEGIST",
-      subtitle: "Focus: Innovation, Market Value, and Scalability in Tunisia.",
+      title: t('simulation.jury_title_business'),
+      subtitle: t('simulation.jury_subtitle_business'),
       bgColor: "bg-amber-100",
       imagePath: "/jury/business-strategist.png",
     },
   ];
+
+  const DELIBERATION_MESSAGES = [
+    t('simulation.deliberation_1'),
+    t('simulation.deliberation_2'),
+    t('simulation.deliberation_3'),
+    t('simulation.deliberation_4'),
+  ];
+
+  const DIFFICULTY_CARDS = DIFFICULTY_CARD_META.map(card => ({
+    ...card,
+    title: t(card.titleKey),
+    description: t(card.descKey),
+  }));
 
   // Helper function to handle the actual initialization after confirmation
   const confirmAndInitialize = () => {
@@ -1220,11 +1227,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 </div>
                 
                 <h2 className="text-xl font-bold text-gray-900 mb-2">
-                  Start Simulation?
+                  {t('simulation.start_simulation_confirm')}
                 </h2>
                 
                 <p className="text-gray-600 text-sm mb-8 leading-relaxed">
-                  This will deduct <span className="font-semibold text-gray-900 bg-yellow-100 px-1.5 py-0.5 rounded">30 credits</span> from your balance to generate AI jury interactions and evaluations.
+                  {t('simulation.credit_deduction_notice', { credits: '30' })}
                 </p>
 
                 <div className="flex gap-4 w-full">
@@ -1232,13 +1239,13 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                     onClick={() => setShowConfirmModal(false)}
                     className="flex-1 py-3 px-4 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button
                     onClick={confirmAndInitialize}
                     className="flex-1 py-3 px-4 bg-gray-900 rounded-xl text-white font-medium hover:bg-gray-800 shadow-sm transition-colors"
                   >
-                    Confirm Start
+                    {t('simulation.confirm_start')}
                   </button>
                 </div>
               </motion.div>
@@ -1266,7 +1273,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   {liveSimulations > 0 && (
                     <div className="flex items-center shrink-0 gap-2 px-3 py-1.5 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] md:text-xs font-bold uppercase tracking-widest text-black">
                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
-                      {liveSimulations} {language === 'fr' ? 'Simulations Actives' : 'Active Simulations'}
+                      {liveSimulations} {t('simulation.active_simulations')}
                     </div>
                   )}
                 </div>
@@ -1294,7 +1301,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                               : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
                           }`}
                         >
-                          {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                          {lang === 'french' ? t('simulation.lang_french') : t('simulation.lang_english')}
                         </button>
                       ))}
                     </div>
@@ -1324,9 +1331,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                     <div className="mt-4 flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
                       <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
                       <span className="text-[11px] font-semibold uppercase tracking-wider">
-                        {language === 'fr' 
-                          ? 'Optimisé pour Google Chrome'
-                          : 'Optimized for Google Chrome'}
+                        {t('simulation.chrome_optimized')}
                       </span>
                     </div>
                   </div>
@@ -1365,7 +1370,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                           <div>
                             <div className={`font-semibold text-sm mb-1 ${isHostileLocked ? 'text-gray-400' : isSelected ? diff.color : 'text-gray-900'}`}>
                               {diff.title}
-                              {isHostileLocked && <span className="ml-2 text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Score 14+ to Unlock</span>}
+                              {isHostileLocked && <span className="ml-2 text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t('simulation.score_unlock')}</span>}
                             </div>
                             <div className="text-xs text-gray-500 leading-relaxed">
                               {diff.description}
@@ -1393,7 +1398,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       </div>
                     ) : (
                       <>
-                        <span className="text-lg">Start Simulation</span>
+                        <span className="text-lg">{t('simulation.start_simulation')}</span>
                         <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
                           30
                           <NextImage 
@@ -1412,9 +1417,9 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
                   {profile && profile.credits >= 30 ? (
                     <div className="flex items-center gap-2">
-                       <span>Estimated Balance:</span>
+                       <span>{t('simulation.estimated_balance')}</span>
                        <span className="text-black font-bold">{profile.credits - 30}</span>
-                       <span>Credits remaining</span>
+                       <span>{t('simulation.credits_remaining')}</span>
                     </div>
                   ) : profile ? (
                     <p className="text-red-600 font-bold border-b border-red-600">
@@ -1448,7 +1453,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 className="absolute top-6 left-1/2 -translate-x-1/2 px-5 py-2 border border-gray-300 bg-white/80 backdrop-blur-sm"
               >
                 <span className="text-[10px] uppercase tracking-widest text-gray-400 mr-2">
-                  {config.language === 'french' ? 'Préparation de la soutenance pour' : 'Preparing defense for'}
+                  {t('simulation.preparing_defense')}
                 </span>
                 <span className="text-xs font-bold text-gray-800 font-mono">{reportName}</span>
               </motion.div>
@@ -1464,7 +1469,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                   className="bg-black text-white px-8 py-6 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.3)]"
                 >
                   <p className="text-xl font-bold font-mono uppercase tracking-wider">
-                    {config.language === 'french' ? 'Initialisation de la simulation...' : t('simulation.initializing')}
+                    {t('simulation.initializing')}
                   </p>
                 </motion.div>
               )}
@@ -1555,7 +1560,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               onClick={() => setLoadingStep(2)}
               className="absolute bottom-6 right-6 text-[10px] uppercase tracking-widest text-gray-400 hover:text-black border border-gray-300 hover:border-black px-3 py-1.5 transition-colors"
             >
-              Skip Intro
+              {t('simulation.skip_intro')}
             </motion.button>
           </motion.div>
         )}
@@ -1580,13 +1585,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 >
                   <div className="bg-white border-4 border-black px-8 py-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
                     <p className="text-2xl font-black font-mono uppercase tracking-wider">
-                      {config.language === 'french' ? '⏸ En Pause' : '⏸ Paused'}
+                      {t('simulation.paused')}
                     </p>
                   </div>
                   <p className="text-white text-xs uppercase tracking-widest">
-                    {config.language === 'french' 
-                      ? 'La simulation reprendra quand vous revenez à cet onglet'
-                      : 'Simulation will resume when you return to this tab'}
+                    {t('simulation.paused_subtitle')}
                   </p>
                 </motion.div>
               )}
@@ -1687,7 +1690,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       className="text-xs font-bold uppercase tracking-widest text-yellow-600 flex items-center gap-2"
                     >
                       <Loader2 className="w-3 h-3 animate-spin" />
-                      The Jury is thinking...
+                      {t('simulation.jury_thinking')}
                     </motion.div>
                   ) : isAISpeaking ? (
                      <motion.div
@@ -1697,7 +1700,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       exit={{ opacity: 0, y: -5 }}
                       className="text-xs font-bold uppercase tracking-widest text-blue-600"
                     >
-                      Juror is speaking...
+                      {t('simulation.juror_speaking')}
                     </motion.div>
                   ) : isRecording ? (
                      <motion.div
@@ -1708,7 +1711,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       className="text-xs font-bold uppercase tracking-widest text-red-600 flex items-center gap-2"
                     >
                       <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-                      Recording...
+                      {t('simulation.recording')}
                     </motion.div>
                   ) : (
                     <motion.div
@@ -1718,7 +1721,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       exit={{ opacity: 0, y: -5 }}
                       className="text-xs font-bold uppercase tracking-widest text-gray-500"
                     >
-                      Your turn. Press <span className="text-black bg-gray-200 px-1 py-0.5 rounded shadow-sm mx-1">Space</span> or click the mic.
+                      {t('simulation.your_turn')} <span className="text-black bg-gray-200 px-1 py-0.5 rounded shadow-sm mx-1">{t('simulation.space_key')}</span> {t('simulation.your_turn_suffix')}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1790,13 +1793,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       </div>
                       
                       <h2 className="text-xl font-bold font-mono uppercase tracking-wider mb-2">
-                        {config.language === 'french' ? 'Terminer la session ?' : 'End Session?'}
+                        {t('simulation.end_session_confirm')}
                       </h2>
                       
                       <p className="text-gray-600 text-sm mb-6">
-                        {config.language === 'french' 
-                          ? 'Cette action mettra fin \u00e0 votre soutenance et lancera l\u2019\u00e9valuation du jury. Vous ne pourrez pas reprendre.'
-                          : 'This will end your defense and trigger the jury evaluation. You will not be able to resume.'}
+                        {t('simulation.end_session_description')}
                       </p>
 
                       <div className="flex gap-4 w-full">
@@ -1804,13 +1805,13 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                           onClick={() => setShowEndConfirmModal(false)}
                           className="flex-1 py-3 px-4 border-2 border-gray-300 text-gray-700 font-bold uppercase tracking-widest hover:border-black hover:text-black transition-colors"
                         >
-                          {config.language === 'french' ? 'Annuler' : 'Cancel'}
+                          {t('common.cancel')}
                         </button>
                         <button
                           onClick={confirmEndSession}
                           className="flex-1 py-3 px-4 bg-red-600 text-white font-bold uppercase tracking-widest hover:bg-red-700 transition-colors"
                         >
-                          {config.language === 'french' ? 'Confirmer' : 'End Now'}
+                          {t('simulation.end_now')}
                         </button>
                       </div>
                     </motion.div>
@@ -1887,11 +1888,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 className="flex items-center gap-6 text-[11px] uppercase tracking-widest text-gray-400"
               >
                 <span>
-                  Duration: {Math.floor((Date.now() - sessionStartTime) / 60000)} min
+                  {t('simulation.duration_label')} {Math.floor((Date.now() - sessionStartTime) / 60000)} min
                 </span>
                 <span className="w-px h-3 bg-gray-300" />
                 <span>
-                  {messages.length} exchange{messages.length !== 1 ? 's' : ''}
+                  {messages.length} {messages.length !== 1 ? t('simulation.exchanges') : t('simulation.exchange')}
                 </span>
               </motion.div>
             )}

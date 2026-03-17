@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { logGroqCost } from '@/src/config/groq';
 
 // Enhanced System Prompt for Detailed PFE Academic Analysis
 const COMBINED_SYSTEM_PROMPT = `
@@ -152,6 +153,9 @@ export async function POST(req: NextRequest) {
             const vengText = vengData.choices?.[0]?.message?.content?.trim();
             if (vengText) {
               firstJuryMessage = { speaker: 'academic', text: vengText, emotion: 'serious' };
+            }
+            if (vengData.usage) {
+              logGroqCost("Initialization Greeting", vengData.usage.prompt_tokens, vengData.usage.completion_tokens, "llama-3.3-70b-versatile");
             }
           } catch (e) {
             console.error('Vengeance greeting failed, using default:', e);

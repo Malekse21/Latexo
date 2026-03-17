@@ -8,6 +8,34 @@ const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 export const GROQ_MODEL_FAST = 'llama-3.3-70b-versatile';      // question gen, follow-ups
 export const GROQ_MODEL_EVAL = 'llama-3.3-70b-versatile';      // evaluation (full power)
 
+// Pricing per 1M tokens (Llama 3.3 70b)
+const PRICE_PER_1M_PROMPT = 0.59;
+const PRICE_PER_1M_COMPLETION = 0.79;
+const USD_TO_TND_RATE = 3.10;
+
+/**
+ * Calculates and logs the cost of a Groq API call.
+ */
+export function logGroqCost(
+  actionName: string,
+  promptTokens: number,
+  completionTokens: number,
+  modelName: string = GROQ_MODEL_FAST
+) {
+  const promptCost = (promptTokens / 1_000_000) * PRICE_PER_1M_PROMPT;
+  const completionCost = (completionTokens / 1_000_000) * PRICE_PER_1M_COMPLETION;
+  const totalUsd = promptCost + completionCost;
+  const totalTnd = totalUsd * USD_TO_TND_RATE;
+
+  // Formatting for clean console output
+  const usdFmt = totalUsd < 0.0001 ? '<$0.0001' : `$${totalUsd.toFixed(4)}`;
+  const tndFmt = totalTnd < 0.0001 ? '<0.0001 TND' : `${totalTnd.toFixed(4)} TND`;
+
+  console.log(
+    `[💰 GROQ: ${actionName}] Model: ${modelName} | Tokens: ${promptTokens}in / ${completionTokens}out | Cost: ${usdFmt} (~${tndFmt})`
+  );
+}
+
 export interface GroqChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -70,9 +98,14 @@ export async function groqChat(options: GroqCompletionOptions): Promise<string> 
     throw new Error('Groq returned empty content');
   }
 
-  // Log token usage during development
+  // Log token usage and cost
   if (data.usage) {
-    console.log(`[Groq] ${model} — ${data.usage.prompt_tokens}in/${data.usage.completion_tokens}out tokens`);
+    logGroqCost(
+      "groqChat Wrapper",
+      data.usage.prompt_tokens,
+      data.usage.completion_tokens,
+      model
+    );
   }
 
   return content;

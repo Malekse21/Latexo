@@ -1,9 +1,8 @@
 "use client";
 
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
-import { Clock, ArrowRight, MessageCircle, TrendingDown } from "lucide-react";
+import { Clock, ArrowRight, Sparkles, TrendingDown } from "lucide-react";
 import Image from "next/image";
-import { useMemo } from "react";
 
 interface Report {
   id: string;
@@ -25,24 +24,10 @@ interface CardsViewProps {
   readinessScore: number | null;
   projectedScore: number | null;
   lastGrade: number | null;
-  pastQuestion: string | null;
+  memorySnapshot: string | null;
   onUploadClick: () => void;
   onNavigateToDefense: () => void;
   t: (key: string, params?: any) => any;
-}
-
-const JURIES = [
-  { name: 'Malek', avatar: '/jury/technical-expert.png', role: 'Technical' },
-  { name: 'Souad', avatar: '/jury/strict-academic.png', role: 'Academic' },
-  { name: 'Amir', avatar: '/jury/business-strategist.png', role: 'Business' }
-];
-
-function getReadinessMention(score: number): string {
-  if (score >= 85) return "Prêt";
-  if (score >= 65) return "Presque prêt";
-  if (score >= 40) return "En progression";
-  if (score >= 20) return "Début prometteur";
-  return "À commencer";
 }
 
 export function CardsView({
@@ -53,7 +38,7 @@ export function CardsView({
   readinessScore,
   projectedScore,
   lastGrade,
-  pastQuestion,
+  memorySnapshot,
   onUploadClick,
   onNavigateToDefense,
   t
@@ -61,13 +46,6 @@ export function CardsView({
   const bestScore = profile?.best_score || 0;
   const gap = lastGrade !== null ? bestScore - lastGrade : 0;
   const hasSessionData = lastGrade !== null && bestScore > 0;
-
-  // Randomize jury once based on the pastQuestion to stay stable during re-renders
-  const selectedJury = useMemo(() => {
-    if (!pastQuestion) return JURIES[0];
-    const index = pastQuestion.length % JURIES.length;
-    return JURIES[index];
-  }, [pastQuestion]);
 
   return (
     <div className="flex flex-col h-auto md:h-[calc(100vh-200px)]">
@@ -79,9 +57,11 @@ export function CardsView({
           </h1>
           
           {daysUntilDefense > 0 && (
-            <div className="flex items-center gap-2 text-zinc-600 font-mono text-sm uppercase tracking-widest font-bold">
+            <div className="inline-flex items-center gap-2 bg-black text-white px-3 py-1.5 rounded-sm shadow-sm w-max animate-pulse">
               <Clock className="w-4 h-4" />
-              <span>{t('welcome.defense_in')} <span className="text-black font-black">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span></span>
+              <span className="font-mono text-xs uppercase tracking-widest font-bold">
+                {t('welcome.defense_in')} <span className="font-black text-sm">{daysUntilDefense} {t('welcome.days').toUpperCase()}</span>
+              </span>
             </div>
           )}
         </div>
@@ -109,7 +89,6 @@ export function CardsView({
                 {/* Top row: label + score + mention */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
-                  <span className="text-xs text-zinc-600 font-bold font-mono uppercase">{getReadinessMention(readinessScore)}</span>
                 </div>
 
                 {/* Big score */}
@@ -138,54 +117,47 @@ export function CardsView({
                   <span className="text-lg font-black text-zinc-100">/100</span>
                 </div>
                 <div className="w-full h-1.5 bg-zinc-50" />
-                <p className="text-[10px] text-zinc-400 font-mono mt-3">Lance ta première simulation</p>
+                <p className="text-[10px] text-zinc-400 font-mono mt-3">{t('dashboard.ai_notes_empty')}</p>
               </>
             )}
           </div>
 
-          {/* ── Section 2: Past Question Flashcard ────────────── */}
+          {/* ── Section 2: AI Supervisor Notes (Memory Snapshot) ───── */}
           <div className="border border-t-0 border-zinc-200 p-4 bg-zinc-50/30">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-6 h-6 rounded-full border border-black overflow-hidden bg-white shrink-0 shadow-sm">
-                <Image
-                  src={selectedJury.avatar}
-                  alt={selectedJury.name}
-                  width={24}
-                  height={24}
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-8 h-8 rounded-full border border-black bg-white shrink-0 shadow-sm overflow-hidden flex items-center justify-center">
+                <Image src="/jury/Supervisor.png" alt="Supervisor" width={32} height={32} className="object-cover w-full h-full" />
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-600 uppercase font-black tracking-[0.2em] font-mono">Daily Review</span>
-                <span className="text-[10px] text-zinc-400 font-mono italic">• {selectedJury.name} ({selectedJury.role})</span>
-              </div>
+              <span className="text-xs text-black uppercase font-black tracking-[0.2em] font-mono">
+                {t('dashboard.ai_notes_label')}
+              </span>
             </div>
 
-            {pastQuestion ? (
+            {memorySnapshot ? (
               <p className="text-sm font-serif italic text-zinc-800 leading-relaxed pl-3 border-l-2 border-black py-1">
-                "{pastQuestion}"
+                &ldquo;{memorySnapshot}&rdquo;
               </p>
             ) : (
               <div className="flex items-center gap-2 text-zinc-400">
-                <MessageCircle className="w-4 h-4" />
-                <p className="text-[11px] font-mono">Simule pour débloquer les questions flash</p>
+                <Sparkles className="w-4 h-4" />
+                <p className="text-[11px] font-mono">{t('dashboard.ai_notes_empty')}</p>
               </div>
             )}
           </div>
 
-          {/* ── Section 3: Session Gap Recovery ──────────────── */}
+          {/* ── Section 3: Performance + CTA ──────────────────── */}
           <div className="border border-t-0 border-zinc-200 p-4">
             <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">Performance</span>
 
-            {hasSessionData ? (
+            {hasSessionData && (
               <div className="mt-4">
                 <div className="space-y-3 mb-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">Meilleure</span>
+                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">{t('dashboard.perf_best')}</span>
                     <span className="text-sm font-black tabular-nums">{bestScore}/20</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">Dernière session</span>
+                    <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wider">{t('dashboard.perf_last')}</span>
                     <div className="flex items-center gap-3">
                       {gap > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-zinc-100 text-zinc-500 font-mono font-bold">-{gap}pts</span>
@@ -197,24 +169,27 @@ export function CardsView({
 
                 {gap > 0 && (
                   <p className="text-[11px] text-zinc-600 font-medium font-mono mb-4 border-l-2 border-zinc-100 pl-3 italic">
-                    {gap === 1 ? 'Ce point est récupérable' : `Ces ${gap} points sont récupérables`}
+                    {t('dashboard.perf_recoverable', { count: gap })}
                   </p>
                 )}
-
-                <button
-                  onClick={onNavigateToDefense}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-black text-white text-[11px] font-bold font-mono uppercase tracking-widest hover:bg-zinc-800 transition-colors cursor-pointer group"
-                >
-                  <span>Simuler maintenant</span>
-                  <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
-            ) : (
-              <div className="mt-3 flex items-center gap-2 text-zinc-300">
-                <TrendingDown className="w-4 h-4" />
-                <p className="text-[11px] font-mono">Aucune session enregistrée</p>
               </div>
             )}
+
+            {!hasSessionData && (
+              <div className="mt-3 flex items-center gap-2 text-zinc-300 mb-4">
+                <TrendingDown className="w-4 h-4" />
+                <p className="text-[11px] font-mono">{t('dashboard.perf_no_session')}</p>
+              </div>
+            )}
+
+            {/* CTA — Always visible */}
+            <button
+              onClick={onNavigateToDefense}
+              className="w-full flex items-center justify-center gap-2.5 py-3 bg-black text-white text-xs font-bold font-mono uppercase tracking-widest hover:bg-zinc-800 transition-all duration-200 cursor-pointer group mt-2"
+            >
+              <span>{t('dashboard.cta_simulate')}</span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            </button>
           </div>
         </div>
       </div>
