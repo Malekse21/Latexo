@@ -74,10 +74,8 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    // Only fetch dashboard data once the UserProvider has finished loading the session and profile
     if (!loading && profile?.id) {
-      // Refresh profile state globally on mount (e.g., when returning from Leaderboard)
-      refreshProfile();
-      
       fetchActiveReport();
       fetchReadinessData();
       fetchMemorySnapshot();

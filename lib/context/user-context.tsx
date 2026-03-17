@@ -107,33 +107,36 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    const getInitialSession = async () => {
+    let mounted = true;
+
+    const initializeSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!mounted) return;
+      
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
         await fetchProfile(session.user.id);
       }
-      setLoading(false);
+      
+      if (mounted) {
+        setLoading(false);
+      }
     };
 
-    getInitialSession();
+    initializeSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        if (!mounted) return;
+        
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         
         if (currentSession?.user) {
-          // If we receive a new session (e.g., after login), fetch the profile
-          if (event === 'SIGNED_IN' || !profile) {
-            setLoading(true);
-            await fetchProfile(currentSession.user.id);
-            setLoading(false);
-          }
-
-          // PostHog: Identify user on login/signup
+          // Identify user on any active session ping
           posthog.identify(currentSession.user.id, {
             email: currentSession.user.email,
             name: currentSession.user.user_metadata?.full_name,
@@ -141,15 +144,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
           if (event === 'SIGNED_IN') {
             posthog.capture('user_logged_in');
+            
+            // Only re-trigger the loading/fetch sequence explicitly on SIGNED_IN
+            setLoading(true);
+            await fetchProfile(currentSession.user.id);
+            if (mounted) setLoading(false);
+          } else if (event === 'USER_UPDATED') {
+            // Background refresh, no loading UI needed
+            await fetchProfile(currentSession.user.id);
           }
-        } else {
+        } else if (event === 'SIGNED_OUT') {
           setProfile(null);
-          setLoading(false);
+          if (mounted) setLoading(false);
         }
       }
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
