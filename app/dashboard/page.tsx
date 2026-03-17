@@ -74,36 +74,38 @@ function DashboardContent() {
   };
 
   useEffect(() => {
-    // Refresh profile state globally on mount (e.g., when returning from Leaderboard)
-    refreshProfile();
-    
-    fetchActiveReport();
-    fetchReadinessData();
-    fetchMemorySnapshot();
-    
-    // Time-based greeting logic
-    const hour = new Date().getHours();
-    let greetingKey = 'dashboard.greetings.morning';
-    if (hour >= 12 && hour < 18) {
-      greetingKey = 'dashboard.greetings.afternoon';
-    } else if (hour >= 18) {
-      greetingKey = 'dashboard.greetings.evening';
+    if (!loading && profile?.id) {
+      // Refresh profile state globally on mount (e.g., when returning from Leaderboard)
+      refreshProfile();
+      
+      fetchActiveReport();
+      fetchReadinessData();
+      fetchMemorySnapshot();
+      
+      // Time-based greeting logic
+      const hour = new Date().getHours();
+      let greetingKey = 'dashboard.greetings.morning';
+      if (hour >= 12 && hour < 18) {
+        greetingKey = 'dashboard.greetings.afternoon';
+      } else if (hour >= 18) {
+        greetingKey = 'dashboard.greetings.evening';
+      }
+      
+      // Fallback if translations don't exist
+      const localizedGreeting = t(greetingKey);
+      if (localizedGreeting !== greetingKey) {
+         setDynamicGreeting(localizedGreeting);
+      } else {
+         if (hour >= 12 && hour < 18) {
+           setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good afternoon');
+         } else if (hour >= 18) {
+           setDynamicGreeting(language === 'fr' ? 'Bonsoir' : 'Good evening');
+         } else {
+           setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
+         }
+      }
     }
-    
-    // Fallback if translations don't exist
-    const localizedGreeting = t(greetingKey);
-    if (localizedGreeting !== greetingKey) {
-       setDynamicGreeting(localizedGreeting);
-    } else {
-       if (hour >= 12 && hour < 18) {
-         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good afternoon');
-       } else if (hour >= 18) {
-         setDynamicGreeting(language === 'fr' ? 'Bonsoir' : 'Good evening');
-       } else {
-         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
-       }
-    }
-  }, [profile?.id, profile?.active_report_id, language]);
+  }, [profile?.id, language, loading]);
 
   // ─── Readiness Score helpers ───────────────────────────────────
   const getSessionVolume = (sessions: number): number => {

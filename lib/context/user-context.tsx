@@ -126,7 +126,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUser(currentSession?.user ?? null);
         
         if (currentSession?.user) {
-          await fetchProfile(currentSession.user.id);
+          // If we receive a new session (e.g., after login), fetch the profile
+          if (event === 'SIGNED_IN' || !profile) {
+            setLoading(true);
+            await fetchProfile(currentSession.user.id);
+            setLoading(false);
+          }
 
           // PostHog: Identify user on login/signup
           posthog.identify(currentSession.user.id, {
@@ -139,9 +144,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setProfile(null);
+          setLoading(false);
         }
-        
-        setLoading(false);
       }
     );
 
