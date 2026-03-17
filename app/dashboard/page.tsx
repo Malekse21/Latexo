@@ -74,8 +74,10 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    console.log("[DashboardContent] Effect triggered.", { loading, profileId: profile?.id });
     // Only fetch dashboard data once the UserProvider has finished loading the session and profile
     if (!loading && profile?.id) {
+      console.log("[DashboardContent] Fetching dashboard data for:", profile.id);
       fetchActiveReport();
       fetchReadinessData();
       fetchMemorySnapshot();
@@ -102,6 +104,8 @@ function DashboardContent() {
            setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
          }
       }
+    } else if (!loading && !profile) {
+      console.log("[DashboardContent] Loading finished but no profile found.");
     }
   }, [profile?.id, language, loading]);
 
@@ -282,7 +286,19 @@ function DashboardContent() {
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
-        {(activeTab === 'briefing' || activeTab === null) && (
+        {loading || !profile ? (
+          <motion.div 
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center justify-center h-64"
+          >
+            <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+          </motion.div>
+        ) : (
+          <>
+            {(activeTab === 'briefing' || activeTab === null) && (
           <motion.div
             key="briefing"
             initial={{ opacity: 0, y: 12 }}
@@ -324,33 +340,35 @@ function DashboardContent() {
           </motion.div>
         )}
 
-        {/* Aftermath - Results Dashboard */}
-        {activeTab === 'aftermath' && (
-          <motion.div
-            key="aftermath"
-            className="h-[calc(100vh-140px)]"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-          >
-            {simulationId ? (
-              <AftermathDashboard simulationId={simulationId} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                  <span className="text-2xl">📊</span>
-                </div>
-                <h2 className="text-2xl font-bold text-gray-900">{t('dashboard.aftermath_empty_title')}</h2>
-                <p className="text-gray-500 max-w-md">
-                  {t('dashboard.aftermath_empty_subtitle')}
-                </p>
-                <div className="px-4 py-2 bg-gray-100 text-gray-500 text-xs font-mono rounded mt-4">
-                  {t('dashboard.aftermath_status')}
-                </div>
-              </div>
+            {/* Aftermath - Results Dashboard */}
+            {activeTab === 'aftermath' && (
+              <motion.div
+                key="aftermath"
+                className="h-[calc(100vh-140px)]"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+              >
+                {simulationId ? (
+                  <AftermathDashboard simulationId={simulationId} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <span className="text-2xl">📊</span>
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900">{t('dashboard.aftermath_empty_title')}</h2>
+                    <p className="text-gray-500 max-w-md">
+                      {t('dashboard.aftermath_empty_subtitle')}
+                    </p>
+                    <div className="px-4 py-2 bg-gray-100 text-gray-500 text-xs font-mono rounded mt-4">
+                      {t('dashboard.aftermath_status')}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
             )}
-          </motion.div>
+          </>
         )}
       </AnimatePresence>
 
