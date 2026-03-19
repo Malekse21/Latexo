@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/context/user-context";
 import { analyzePdf } from "@/lib/pdf-analyzer";
 import { Portal } from "@/components/ui/portal";
-import { posthog } from "@/components/providers/posthog-provider";
 
 interface UploadStatus {
   status: 'idle' | 'uploading' | 'complete' | 'error';
@@ -110,12 +109,6 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({ 
         status: 'complete', 
         message: t('upload.upload_success', { pageCount, wordCount })
-      });
-
-      // PostHog: Track report upload
-      posthog.capture('report_uploaded', {
-        page_count: pageCount,
-        word_count: wordCount,
       });
 
       setTimeout(() => {

@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useUser } from "@/lib/context/user-context";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { posthog } from "@/components/providers/posthog-provider";
 import { UploadModal } from "@/components/dashboard/UploadModal";
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
 import { StatsPanel } from "@/components/dashboard/StatsPanel";
@@ -65,11 +64,6 @@ function DashboardContent() {
     } else {
       setActiveTab(tab);
       router.push(`/dashboard?tab=${tab}`);
-
-      // PostHog: Track simulation start
-      if (tab === 'defense') {
-        posthog.capture('simulation_started');
-      }
     }
   };
 
@@ -265,9 +259,6 @@ function DashboardContent() {
   const handleSimulationComplete = (simId: string) => {
     setSimulationId(simId);
     setActiveTab('aftermath');
-
-    // PostHog: Track simulation completion
-    posthog.capture('simulation_completed', { simulation_id: simId });
   };
 
   // derived state for header

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter, STIX_Two_Text } from "next/font/google";
 import "./globals.css";
 import { UserProvider } from "@/lib/context/user-context";
-import { PostHogProvider } from "@/components/providers/posthog-provider";
 import NextTopLoader from "nextjs-toploader";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -35,11 +34,9 @@ export default function RootLayout({
           speed={200}
           shadow="0 0 10px #000000,0 0 5px #000000"
         />
-        <PostHogProvider>
-          <UserProvider>
-            {children}
-          </UserProvider>
-        </PostHogProvider>
+        <UserProvider>
+          {children}
+        </UserProvider>
       </body>
     </html>
   );

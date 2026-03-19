@@ -4,7 +4,6 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
-import { posthog } from "@/components/providers/posthog-provider";
 
 interface Profile {
   id: string;
@@ -136,14 +135,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUser(currentSession?.user ?? null);
         
         if (currentSession?.user) {
-          // Identify user on any active session ping
-          posthog.identify(currentSession.user.id, {
-            email: currentSession.user.email,
-            name: currentSession.user.user_metadata?.full_name,
-          });
-
           if (event === 'SIGNED_IN') {
-            posthog.capture('user_logged_in');
             
             // Only re-trigger the loading/fetch sequence explicitly on SIGNED_IN
             setLoading(true);
@@ -171,7 +163,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
-    posthog.reset();
     
     // 2. Instant client-side navigation to landing page
     router.push("/");
