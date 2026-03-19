@@ -121,10 +121,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const data = await fetchProfile(user.id);
         if (mounted) {
           if (data) setProfile(data);
+          console.log('setLoading false called (initializeSession success)');
           setLoading(false);
         }
       } else {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          console.log('setLoading false called (initializeSession no user)');
+          setLoading(false);
+        }
       }
     };
 
@@ -145,6 +149,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             const data = await fetchProfile(currentSession.user.id);
             if (mounted) {
               if (data) setProfile(data);
+              console.log('setLoading false called (SIGNED_IN)');
               setLoading(false);
             }
           } else if (event === 'USER_UPDATED') {
@@ -154,7 +159,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           }
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);
-          if (mounted) setLoading(false);
+          if (mounted) {
+             console.log('setLoading false called (SIGNED_OUT)');
+             setLoading(false);
+          }
         }
       }
     );
