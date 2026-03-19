@@ -48,10 +48,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'latexo-app-storage', // unique name
       partialize: (state) => ({ 
-        isSidebarCollapsed: state.isSidebarCollapsed,
-        // We might choose NOT to persist selectedReport if we want fresh state on reload, 
-        // but user asked for hydration/persistence. Persisting UI state is safe.
-        // Credits should be fresh from DB usually.
+        // We exclude isSidebarCollapsed to fix hydration mismatch errors on Vercel
       }),
     }
   )

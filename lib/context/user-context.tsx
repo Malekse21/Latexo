@@ -109,15 +109,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     const initializeSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!mounted) return;
       
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser(user ?? null);
       
-      if (session?.user) {
-        await fetchProfile(session.user.id);
+      if (user) {
+        await fetchProfile(user.id);
       }
       
       if (mounted) {
