@@ -33,10 +33,10 @@ interface Report {
 }
 
 function DashboardContent() {
-  const { profile, refreshProfile, t, language } = useUser();
+  const { profile, refreshProfile, t, language, loading: userLoading } = useUser();
   const [activeTab, setActiveTab] = useState<Tab>(null);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isFetchingData, setIsFetchingData] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const { setSelectedReport } = useAppStore();
   
@@ -68,9 +68,9 @@ function DashboardContent() {
   };
 
   useEffect(() => {
-    console.log("[DashboardContent] Effect triggered.", { loading, profileId: profile?.id });
+    console.log("[DashboardContent] Effect triggered.", { userLoading, profileId: profile?.id });
     // Only fetch dashboard data once the UserProvider has finished loading the session and profile
-    if (!loading && profile?.id) {
+    if (!userLoading && profile?.id) {
       console.log("[DashboardContent] Fetching dashboard data for:", profile.id);
       fetchActiveReport();
       fetchReadinessData();
@@ -98,10 +98,10 @@ function DashboardContent() {
            setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
          }
       }
-    } else if (!loading && !profile) {
+    } else if (!userLoading && !profile) {
       console.log("[DashboardContent] Loading finished but no profile found.");
     }
-  }, [profile?.id, language, loading]);
+  }, [profile?.id, language, userLoading]);
 
   // ─── Readiness Score helpers ───────────────────────────────────
   const getSessionVolume = (sessions: number): number => {
@@ -177,7 +177,7 @@ function DashboardContent() {
 
   const fetchActiveReport = async () => {
     try {
-      setLoading(true);
+      setIsFetchingData(true);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -216,7 +216,7 @@ function DashboardContent() {
     } catch (error) {
       console.error('Error fetching report:', error);
     } finally {
-      setLoading(false);
+      setIsFetchingData(false);
     }
   };
 
@@ -277,7 +277,7 @@ function DashboardContent() {
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
-        {loading || !profile ? (
+        {userLoading || isFetchingData || !profile ? (
           <motion.div 
             key="loading"
             initial={{ opacity: 0 }}
