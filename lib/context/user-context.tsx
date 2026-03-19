@@ -86,22 +86,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error) throw error;
-      setProfile(data);
+      return data;
     } catch (error: any) {
       console.error("Error fetching profile:", error);
       
-      // If the profile doesn't exist (PGRST116), the session is invalid for our app logic.
-      // We should sign out the user to clean up the state.
       if (error?.code === 'PGRST116') {
         console.warn("Profile not found for user. Signing out...");
         await signOut();
       }
+      return null;
     }
   };
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
+      const data = await fetchProfile(user.id);
+      if (data) setProfile(data);
     }
   };
 
@@ -118,11 +118,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUser(user ?? null);
       
       if (user) {
-        await fetchProfile(user.id);
-      }
-      
-      if (mounted) {
-        setLoading(false);
+        const data = await fetchProfile(user.id);
+        if (mounted) {
+          if (data) setProfile(data);
+          setLoading(false);
+        }
+      } else {
+        if (mounted) setLoading(false);
       }
     };
 
@@ -140,11 +142,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             
             // Only re-trigger the loading/fetch sequence explicitly on SIGNED_IN
             setLoading(true);
-            await fetchProfile(currentSession.user.id);
-            if (mounted) setLoading(false);
+            const data = await fetchProfile(currentSession.user.id);
+            if (mounted) {
+              if (data) setProfile(data);
+              setLoading(false);
+            }
           } else if (event === 'USER_UPDATED') {
             // Background refresh, no loading UI needed
-            await fetchProfile(currentSession.user.id);
+            const data = await fetchProfile(currentSession.user.id);
+            if (mounted && data) setProfile(data);
           }
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);
