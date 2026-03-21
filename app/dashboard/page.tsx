@@ -49,6 +49,17 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // Temporary debug block as requested
+  useEffect(() => {
+    const checkSession = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.getSession();
+      console.log("SESSION ON VERCEL (Dashboard):", data.session);
+      console.log("SESSION ERROR (Dashboard):", error);
+    };
+    checkSession();
+  }, []);
+
   // Initialize activeTab from search params
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -72,9 +83,9 @@ function DashboardContent() {
     // Only fetch dashboard data once the UserProvider has finished loading the session and profile
     if (!userLoading && profile?.id) {
       console.log("[DashboardContent] Fetching dashboard data for:", profile.id);
-      fetchActiveReport();
-      fetchReadinessData();
-      fetchMemorySnapshot();
+      fetchActiveReport(profile.id);
+      fetchReadinessData(profile.id);
+      fetchMemorySnapshot(profile.id);
       
       // Time-based greeting logic
       const hour = new Date().getHours();
@@ -123,11 +134,9 @@ function DashboardContent() {
     return Math.round(avgScoreNorm * 0.50 + sessionVol * 0.35 + recency * 0.15);
   };
 
-  const fetchReadinessData = async () => {
+  const fetchReadinessData = async (userId: string) => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
       const totalSessions = profile?.total_sessions || 0;
       const lastSession = profile?.last_session;
@@ -136,7 +145,7 @@ function DashboardContent() {
       const { data: recentSims } = await supabase
         .from('simulations')
         .select('final_grade, created_at')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -175,12 +184,10 @@ function DashboardContent() {
     }
   };
 
-  const fetchActiveReport = async () => {
+  const fetchActiveReport = async (userId: string) => {
     try {
       setIsFetchingData(true);
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
       let reportData = null;
 
@@ -199,7 +206,7 @@ function DashboardContent() {
         const { data } = await supabase
           .from('reports')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(1)
           .single();
@@ -220,16 +227,14 @@ function DashboardContent() {
     }
   };
 
-  const fetchMemorySnapshot = async () => {
+  const fetchMemorySnapshot = async (userId: string) => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
       const { data: latestSim } = await supabase
         .from('simulations')
         .select('memory_snapshot')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'COMPLETED')
         .not('memory_snapshot', 'is', null)
         .order('created_at', { ascending: false })
@@ -266,6 +271,19 @@ function DashboardContent() {
     ? differenceInDays(new Date(profile.defense_date), new Date()) 
     : 0;
 
+  // The loop prevention logic
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // If loading is done, but there's no profile, returning null lets the middleware handle redirects
+  // instead of rendering loops of fetching / failing / navigating constantly.
+  if (!profile) return null;
+
   return (
     <div className="space-y-4 pt-4">
       {/* Sub-Nav (Tabs) */}
@@ -277,7 +295,7 @@ function DashboardContent() {
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
-        {userLoading || isFetchingData || !profile ? (
+        {isFetchingData ? (
           <motion.div 
             key="loading"
             initial={{ opacity: 0 }}

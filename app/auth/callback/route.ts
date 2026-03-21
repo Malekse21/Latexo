@@ -32,19 +32,16 @@ export async function GET(request: Request) {
       }
 
       // ── Build the redirect URL ──
-      // On Vercel, x-forwarded-host gives us the real domain.
-      // Locally, we use the host header directly.
-      const forwardedHost = request.headers.get('x-forwarded-host')
-      const host = request.headers.get('host')
-      const isLocalEnv = process.env.NODE_ENV === 'development'
-      
-      if (isLocalEnv) {
-        return NextResponse.redirect(`http://${host}${destination}`)
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${destination}`)
-      } else {
-        return NextResponse.redirect(`${origin}${destination}`)
-      }
+      // Use NEXT_PUBLIC_SITE_URL if defined (production), fallback to VERCEL_URL for previews,
+      // and finally local host for development.
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL 
+        ? process.env.NEXT_PUBLIC_SITE_URL 
+        : process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}` 
+          : `http://${request.headers.get('host')}`;
+
+      const baseUrl = siteUrl.replace(/\/$/, '');
+      return NextResponse.redirect(`${baseUrl}${destination}`);
     }
   }
 

@@ -109,8 +109,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     const initializeSession = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      console.log("[UserContext] initializeSession on mount:", { user, session, userError, sessionError });
       
       if (!mounted) return;
       
