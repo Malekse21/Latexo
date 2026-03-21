@@ -281,10 +281,12 @@ export default function OnboardingPage() {
       setIsSubmitting(true);
       
       try {
+        console.log("=== ENTERED FINAL SUBMIT BLOCK ===");
         const supabase = createClient();
         
         // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log("=== GOT USER ===", { user: user?.id, userError });
         
         if (!user) {
           throw new Error('Not authenticated');
@@ -293,6 +295,8 @@ export default function OnboardingPage() {
         // Use user's Google avatar if available
         const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
         
+        console.log("=== FORM STATE ===", form);
+
         const updatePayload = {
           id: user.id,
           full_name: form.fullName,
