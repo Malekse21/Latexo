@@ -215,7 +215,7 @@ function DashboardContent() {
           .from('reports')
           .select('*')
           .eq('id', profile.active_report_id)
-          .single();
+          .maybeSingle();
         reportData = data;
       }
 
@@ -227,7 +227,7 @@ function DashboardContent() {
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
         reportData = data;
       }
 
@@ -257,7 +257,7 @@ function DashboardContent() {
         .not('memory_snapshot', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (latestSim?.memory_snapshot) {
         setMemorySnapshot(latestSim.memory_snapshot);
@@ -271,7 +271,7 @@ function DashboardContent() {
     await refreshProfile();
     // Fetch the new report directly to ensure UI updates immediately
     const supabase = createClient();
-    const { data } = await supabase.from('reports').select('*').eq('id', reportId).single();
+    const { data } = await supabase.from('reports').select('*').eq('id', reportId).maybeSingle();
     if (data) {
         const language = data.detected_language;
         setActiveReport({ ...data, language });
