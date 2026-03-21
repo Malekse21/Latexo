@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
@@ -36,7 +36,7 @@ function DashboardContent() {
   const { profile, refreshProfile, t, language, loading: userLoading } = useUser();
   const [activeTab, setActiveTab] = useState<Tab>(null);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
-  const [isFetchingData, setIsFetchingData] = useState(true);
+  const [isFetchingData, setIsFetchingData] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const { setSelectedReport } = useAppStore();
   
@@ -48,6 +48,9 @@ function DashboardContent() {
   const [memorySnapshot, setMemorySnapshot] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  const hasLoadedOnce = useRef(false);
+  const isFirstRender = useRef(true);
 
   // Temporary debug block as requested
   useEffect(() => {
@@ -79,40 +82,55 @@ function DashboardContent() {
   };
 
   useEffect(() => {
-    console.log("[DashboardContent] Effect triggered.", { userLoading, profileId: profile?.id });
-    // Only fetch dashboard data once the UserProvider has finished loading the session and profile
-    if (!userLoading && profile?.id) {
-      console.log("[DashboardContent] Fetching dashboard data for:", profile.id);
-      fetchActiveReport(profile.id);
-      fetchReadinessData(profile.id);
-      fetchMemorySnapshot(profile.id);
-      
-      // Time-based greeting logic
-      const hour = new Date().getHours();
-      let greetingKey = 'dashboard.greetings.morning';
-      if (hour >= 12 && hour < 18) {
-        greetingKey = 'dashboard.greetings.afternoon';
-      } else if (hour >= 18) {
-        greetingKey = 'dashboard.greetings.evening';
-      }
-      
-      // Fallback if translations don't exist
-      const localizedGreeting = t(greetingKey);
-      if (localizedGreeting !== greetingKey) {
-         setDynamicGreeting(localizedGreeting);
-      } else {
-         if (hour >= 12 && hour < 18) {
-           setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good afternoon');
-         } else if (hour >= 18) {
-           setDynamicGreeting(language === 'fr' ? 'Bonsoir' : 'Good evening');
-         } else {
-           setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
-         }
-      }
-    } else if (!userLoading && !profile) {
-      console.log("[DashboardContent] Loading finished but no profile found.");
-    }
+    if (userLoading) return;
+    if (!profile?.id) return;
+    if (hasLoadedOnce.current) return;
+
+    hasLoadedOnce.current = true;
+    fetchActiveReport(profile.id);
+    fetchReadinessData(profile.id);
+    fetchMemorySnapshot(profile.id);
   }, [profile?.id, language, userLoading]);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (!profile?.id) return;
+    // language changed intentionally, re-fetch
+    hasLoadedOnce.current = false;
+    fetchActiveReport(profile.id);
+    fetchReadinessData(profile.id);
+    fetchMemorySnapshot(profile.id);
+  }, [language, profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    
+    // Time-based greeting logic
+    const hour = new Date().getHours();
+    let greetingKey = 'dashboard.greetings.morning';
+    if (hour >= 12 && hour < 18) {
+      greetingKey = 'dashboard.greetings.afternoon';
+    } else if (hour >= 18) {
+      greetingKey = 'dashboard.greetings.evening';
+    }
+    
+    // Fallback if translations don't exist
+    const localizedGreeting = t(greetingKey);
+    if (localizedGreeting !== greetingKey) {
+       setDynamicGreeting(localizedGreeting);
+    } else {
+       if (hour >= 12 && hour < 18) {
+         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good afternoon');
+       } else if (hour >= 18) {
+         setDynamicGreeting(language === 'fr' ? 'Bonsoir' : 'Good evening');
+       } else {
+         setDynamicGreeting(language === 'fr' ? 'Bonjour' : 'Good morning');
+       }
+    }
+  }, [language, t, profile?.id]);
 
   // ─── Readiness Score helpers ───────────────────────────────────
   const getSessionVolume = (sessions: number): number => {
