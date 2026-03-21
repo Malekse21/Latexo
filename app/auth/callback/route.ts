@@ -4,18 +4,27 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  
+  console.log("=== AUTH CALLBACK INITIATED ===", { url: request.url, origin, code: !!code });
 
   if (code) {
     const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { error, data: sessionData } = await supabase.auth.exchangeCodeForSession(code)
     
+    console.log("=== EXCHANGE CODE RESULT ===", { 
+      error: error?.message, 
+      hasSession: !!sessionData?.session 
+    });
+
     if (!error) {
       // ── Determine where the user should go ──
-      // Instead of always redirecting to /dashboard and relying on
-      // middleware to re-redirect new users, we check the profile here
-      // to avoid a double-redirect that can break on Vercel.
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
+      console.log("=== GET USER RESULT ===", { 
+        userId: user?.id, 
+        userError: userError?.message 
+      });
+
       let destination = '/dashboard'
       
       if (user) {
@@ -31,20 +40,17 @@ export async function GET(request: Request) {
         }
       }
 
-      // ── Build the redirect URL ──
-      // Use NEXT_PUBLIC_SITE_URL if defined (production), fallback to VERCEL_URL for previews,
-      // and finally local host for development.
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL 
-        ? process.env.NEXT_PUBLIC_SITE_URL 
-        : process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : `http://${request.headers.get('host')}`;
+      console.log(`=== REDIRECTING TO ${destination} ===`);
 
-      const baseUrl = siteUrl.replace(/\/$/, '');
-      return NextResponse.redirect(`${baseUrl}${destination}`);
+      // ── Build the redirect URL ──
+      // By using request.url as the base, we maintain the exact domain the user
+      // was on when they triggered the callback (preview vs prod natively).
+      // This is infinitely safer than reading NEXT_PUBLIC_SITE_URL on previews.
+      return NextResponse.redirect(new URL(destination, request.url))
     }
   }
 
+  console.log("=== AUTH CALLBACK FAILED - FALLING BACK TO LOGIN ===");
   // Auth failed — send to login with error
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)
+  return NextResponse.redirect(new URL(`/login?error=auth_callback_error`, request.url))
 }

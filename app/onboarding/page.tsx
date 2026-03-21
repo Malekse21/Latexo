@@ -291,18 +291,25 @@ export default function OnboardingPage() {
         // Use user's Google avatar if available
         const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
         
-        // Update profile
-        const { error } = await supabase
+        const updatePayload = {
+          id: user.id,
+          full_name: form.fullName,
+          avatar_url: avatarUrl,
+          university: form.university,
+          specialty: form.specialty,
+          defense_date: form.defenseDate || null,
+        };
+
+        console.log("=== SENDING PROFILE UPSERT ===", updatePayload);
+
+        // Update profile (using upsert in case the DB trigger on auth.users failed to create the row)
+        const { error, data: updatedData } = await supabase
           .from('profiles')
-          .update({
-            full_name: form.fullName,
-            avatar_url: avatarUrl,
-            university: form.university,
-            specialty: form.specialty,
-            defense_date: form.defenseDate || null,
-          })
-          .eq('id', user.id);
+          .upsert(updatePayload, { onConflict: 'id' })
+          .select();
         
+        console.log("=== UPSERT RESPONSE ===", { error, data: updatedData });
+
         if (error) throw error;
         
         // Verify the write landed — prevents middleware from seeing stale data
@@ -313,7 +320,7 @@ export default function OnboardingPage() {
           .single();
         
         if (!verifyProfile?.university) {
-          throw new Error('Profile update did not persist');
+          throw new Error('Profile update did not persist in database verification');
         }
         
         // Brief pause for the workspace animation, then hard redirect.
@@ -321,9 +328,9 @@ export default function OnboardingPage() {
         await new Promise((r) => setTimeout(r, 800));
         window.location.replace('/dashboard');
       } catch (error) {
-        console.error('Error saving profile:', error);
+        console.error('=== ERROR SAVING PROFILE ===', error);
         setIsSubmitting(false);
-        alert('Failed to save profile. Please try again.');
+        alert('Failed to save profile. Please check the console log for details and try again.');
       }
     }
   };
