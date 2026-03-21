@@ -270,6 +270,8 @@ export default function OnboardingPage() {
   };
 
   const handleNext = async () => {
+    console.log("=== SUBMIT BUTTON CLICKED ===", { step });
+    
     if (!isStepValid()) return;
 
     if (step < STEP_COUNT - 1) {
