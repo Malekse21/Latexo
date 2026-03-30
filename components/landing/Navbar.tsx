@@ -29,8 +29,8 @@ export function Navbar() {
           <Link href="#mission" className="text-sm font-bold uppercase tracking-widest text-neutral-500 hover:text-black transition-colors">
             Mission
           </Link>
-          <Link href="#map" className="text-sm font-bold uppercase tracking-widest text-neutral-500 hover:text-black transition-colors">
-            Live Map
+          <Link href="#features" className="text-sm font-bold uppercase tracking-widest text-neutral-500 hover:text-black transition-colors">
+            Features
           </Link>
           <Link href="#pricing" className="text-sm font-bold uppercase tracking-widest text-neutral-500 hover:text-black transition-colors">
             Pricing

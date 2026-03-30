@@ -21,7 +21,7 @@ const STEPS = [
   {
     id: "03",
     title: "The Aftermath",
-    description: "Get your final grade, performance radar, and a B&W 'Survivor Card' to prove your readiness on LinkedIn and Instagram.",
+    description: "Get your final grade, performance metrics and a 'Survivor Card' to prove your readiness on LinkedIn and Instagram.",
     icon: Award,
     rotation: "rotate-3",
   },

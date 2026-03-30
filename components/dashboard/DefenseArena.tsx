@@ -130,6 +130,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   const [loadingMessage, setLoadingMessage] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const currentCost = config.duration === 5 ? 10 : config.duration === 15 ? 20 : 30;
 
   const [loadingStep, setLoadingStep] = useState(0);
   
@@ -615,7 +616,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
 
   const handleInitialize = async () => {
-    if (!profile || profile.credits < 8) {
+    if (!profile || profile.credits < currentCost) {
       alert("Insufficient credits to start a simulation.");
       return;
     }
@@ -1231,7 +1232,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 </h2>
                 
                 <p className="text-gray-600 text-sm mb-8 leading-relaxed">
-                  {t('simulation.credit_deduction_notice', { credits: '30' })}
+                  {t('simulation.credit_deduction_notice', { credits: currentCost.toString() })}
                 </p>
 
                 <div className="flex gap-4 w-full">
@@ -1313,19 +1314,31 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       {t('simulation.duration')}
                     </label>
                     <div className="grid grid-cols-3 gap-3">
-                      {[5, 15, 30].map((duration) => (
-                        <button
-                          key={duration}
-                          onClick={() => setConfig({ ...config, duration })}
-                          className={`py-3 px-2 border rounded-xl shadow-sm transition-all font-medium text-sm text-center ${
-                            config.duration === duration
-                              ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
-                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                          }`}
-                        >
-                          {duration === 60 ? "60 min" : `${duration} min`}
-                        </button>
-                      ))}
+                      {[5, 15, 30].map((duration) => {
+                        const cost = duration === 5 ? 10 : duration === 15 ? 20 : 30;
+                        const hasEnough = profile && profile.credits >= cost;
+                        return (
+                          <div
+                            key={duration}
+                            onClick={() => {
+                              if (!hasEnough) {
+                                window.dispatchEvent(new Event('lto_shake_credits'));
+                                return;
+                              }
+                              setConfig({ ...config, duration });
+                            }}
+                            className={`py-3 px-2 border rounded-xl shadow-sm transition-all text-center cursor-pointer flex flex-col items-center justify-center ${
+                              !hasEnough
+                                ? "bg-gray-50 text-gray-400 border-gray-200 opacity-60 hover:bg-red-50/30"
+                                : config.duration === duration
+                                  ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900 font-medium"
+                                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900 font-medium"
+                            }`}
+                          >
+                            <span className="text-sm pointer-events-none">{duration === 60 ? "60 min" : `${duration} min`}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                     
                     <div className="mt-4 flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
@@ -1387,7 +1400,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               <div className="mt-8 pt-6">
                 <button
                   onClick={() => setShowConfirmModal(true)}
-                  disabled={isProcessing || !profile || profile.credits < 30}
+                  disabled={isProcessing || !profile || profile.credits < currentCost}
                   className="w-full bg-gray-900 text-white py-4 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
                 >
                   <div className="flex items-center justify-center gap-3 relative z-10">
@@ -1400,7 +1413,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                       <>
                         <span className="text-lg">{t('simulation.start_simulation')}</span>
                         <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
-                          30
+                          {currentCost}
                           <NextImage 
                             src="/images/favicon.jpeg" 
                             alt="Latexo" 
@@ -1415,10 +1428,10 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
                 </button>
 
                 <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
-                  {profile && profile.credits >= 30 ? (
+                  {profile && profile.credits >= currentCost ? (
                     <div className="flex items-center gap-2">
                        <span>{t('simulation.estimated_balance')}</span>
-                       <span className="text-black font-bold">{profile.credits - 30}</span>
+                       <span className="text-black font-bold">{profile.credits - currentCost}</span>
                        <span>{t('simulation.credits_remaining')}</span>
                     </div>
                   ) : profile ? (

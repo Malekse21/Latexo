@@ -13,6 +13,7 @@ import { DefenseArena } from "@/components/dashboard/DefenseArena";
 import { AftermathDashboard } from "@/components/dashboard/AftermathDashboard";
 import { CardsView } from "@/components/dashboard/CardsView";
 import { cn } from "@/lib/utils";
+import { BarChart2 } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
@@ -380,17 +381,36 @@ function DashboardContent() {
                 {simulationId ? (
                   <AftermathDashboard simulationId={simulationId} />
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                      <span className="text-2xl">📊</span>
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900">{t('dashboard.aftermath_empty_title')}</h2>
-                    <p className="text-gray-500 max-w-md">
-                      {t('dashboard.aftermath_empty_subtitle')}
-                    </p>
-                    <div className="px-4 py-2 bg-gray-100 text-gray-500 text-xs font-mono rounded mt-4">
-                      {t('dashboard.aftermath_status')}
-                    </div>
+                  <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden bg-white">
+                    {/* Background Grid Pattern */}
+                    <div 
+                      className="absolute inset-0 z-0 opacity-10" 
+                      style={{ backgroundImage: 'radial-gradient(black 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+                    />
+
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
+                      className="relative z-10 flex flex-col items-center max-w-lg p-12 bg-white border-2 border-black shadow-[8px_8px_0px_#000000] text-center"
+                    >
+                      <div className="w-16 h-16 bg-neutral-100 border-2 border-black rounded-sm flex items-center justify-center mb-6 shadow-[4px_4px_0px_#000000] rotate-3">
+                        <BarChart2 className="w-8 h-8 text-black" strokeWidth={2.5} />
+                      </div>
+                      
+                      <h2 className="text-3xl font-black text-black tracking-tight uppercase mb-3 leading-tight">
+                        {t('dashboard.aftermath_empty_title')}
+                      </h2>
+                      
+                      <p className="text-neutral-600 font-medium mb-8">
+                        {t('dashboard.aftermath_empty_subtitle')}
+                      </p>
+                      
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white text-[10px] font-bold uppercase tracking-widest relative overflow-hidden group">
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                        <span className="relative z-10">{t('dashboard.aftermath_status')}</span>
+                      </div>
+                    </motion.div>
                   </div>
                 )}
               </motion.div>
