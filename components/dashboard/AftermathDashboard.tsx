@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/context/user-context";
 import NextImage from "next/image";
 import Link from "next/link";
-import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase } from "lucide-react";
+import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase, Download, Loader2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────
 interface SimulationData {
@@ -72,6 +72,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
   const [simulation, setSimulation] = useState<SimulationData | null>(null);
   const [lastScore, setLastScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -126,6 +127,32 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
       return () => clearTimeout(timer);
     }
   }, [simulation?.final_grade, animatedScore]);
+
+  // ─── Handlers ───────────────────────────────────────────────
+  const handleDownloadReceipt = async () => {
+    if (!simulationId) return;
+    try {
+      setIsDownloading(true);
+      const url = `/api/flex-receipt?simulation_id=${simulationId}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) throw new Error("Failed to generate receipt");
+      
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `latexo-receipt-${(simulation?.final_grade || 0).toFixed(1)}.png`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Error downloading receipt:", error);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // ─── Loading / Error States ───────────────────────────────
   if (loading) {
@@ -389,7 +416,29 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
         </motion.div>
 
         {/* ══════════════════════════════════════════════════════
-            SECTION 4 — Compact CTA to Re-run Simulation
+            SECTION 4 — Share Receipt
+            ══════════════════════════════════════════════════════ */}
+        <motion.div
+           initial={{ opacity: 0, y: 15 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ delay: 0.55 }}
+        >
+          <button
+            onClick={handleDownloadReceipt}
+            disabled={isDownloading}
+            className="w-full flex items-center justify-center gap-2.5 px-6 py-4 bg-gray-900 text-white rounded-xl font-bold uppercase tracking-widest text-sm transition-all hover:bg-black focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed group shadow-sm"
+          >
+            {isDownloading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Download className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
+            )}
+            {isDownloading ? "GENERATING RECEIPT..." : "DOWNLOAD FLEX RECEIPT"}
+          </button>
+        </motion.div>
+
+        {/* ══════════════════════════════════════════════════════
+            SECTION 5 — Compact CTA to Re-run Simulation
             ══════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}

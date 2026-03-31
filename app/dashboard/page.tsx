@@ -15,7 +15,7 @@ import { CardsView } from "@/components/dashboard/CardsView";
 import { cn } from "@/lib/utils";
 import { BarChart2 } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
 
 type Tab = 'briefing' | 'defense' | 'aftermath' | null;
@@ -48,7 +48,6 @@ function DashboardContent() {
   const [lastGrade, setLastGrade] = useState<number | null>(null);
   const [memorySnapshot, setMemorySnapshot] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const hasLoadedOnce = useRef(false);
   const isFirstRender = useRef(true);
@@ -64,8 +63,11 @@ function DashboardContent() {
     checkSession();
   }, []);
 
-  // Initialize activeTab from search params
+  // Initialize activeTab from search params (on first mount only)
+  const initialTabSet = useRef(false);
   useEffect(() => {
+    if (initialTabSet.current) return;
+    initialTabSet.current = true;
     const tabParam = searchParams.get('tab');
     if (tabParam === 'defense') setActiveTab('defense');
     else if (tabParam === 'aftermath') setActiveTab('aftermath');
@@ -75,11 +77,12 @@ function DashboardContent() {
   const handleTabChange = (tab: 'briefing' | 'defense' | 'aftermath') => {
     if (tab === 'briefing') {
       setActiveTab(null);
-      router.push('/dashboard');
     } else {
       setActiveTab(tab);
-      router.push(`/dashboard?tab=${tab}`);
     }
+    // Update URL without triggering a navigation/re-render
+    const url = tab === 'briefing' ? '/dashboard' : `/dashboard?tab=${tab}`;
+    window.history.replaceState(null, '', url);
   };
 
   useEffect(() => {
@@ -290,8 +293,19 @@ function DashboardContent() {
     ? differenceInDays(new Date(profile.defense_date), new Date()) 
     : 0;
 
+  // DEBUG: trace which render path is taken
+  console.log('[Dashboard Render]', { 
+    userLoading, 
+    profileId: profile?.id ?? 'NULL', 
+    isFetchingData, 
+    activeTab, 
+    activeReport: activeReport?.id ?? 'NULL',
+    hasLoadedOnce: hasLoadedOnce.current 
+  });
+
   // The loop prevention logic
   if (userLoading) {
+    console.log('[Dashboard] → showing userLoading spinner');
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
@@ -301,7 +315,10 @@ function DashboardContent() {
 
   // If loading is done, but there's no profile, returning null lets the middleware handle redirects
   // instead of rendering loops of fetching / failing / navigating constantly.
-  if (!profile) return null;
+  if (!profile) {
+    console.log('[Dashboard] → profile is null, returning null');
+    return null;
+  }
 
   return (
     <div className="space-y-4 pt-4">
@@ -324,9 +341,7 @@ function DashboardContent() {
           >
             <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
           </motion.div>
-        ) : (
-          <>
-            {(activeTab === 'briefing' || activeTab === null) && (
+        ) : (activeTab === 'briefing' || activeTab === null) ? (
           <motion.div
             key="briefing"
             initial={{ opacity: 0, y: 12 }}
@@ -348,10 +363,7 @@ function DashboardContent() {
               t={t}
             />
           </motion.div>
-        )}
-
-        {/* Defense Room - Live Simulation */}
-        {activeTab === 'defense' && (
+        ) : activeTab === 'defense' ? (
           <motion.div
             key="defense"
             className="h-[calc(100vh-140px)]"
@@ -366,10 +378,7 @@ function DashboardContent() {
               initialLanguage={activeReport?.language as "french" | "english" | "mixed"}
             />
           </motion.div>
-        )}
-
-            {/* Aftermath - Results Dashboard */}
-            {activeTab === 'aftermath' && (
+        ) : activeTab === 'aftermath' ? (
               <motion.div
                 key="aftermath"
                 className="h-[calc(100vh-140px)]"
@@ -414,9 +423,7 @@ function DashboardContent() {
                   </div>
                 )}
               </motion.div>
-            )}
-          </>
-        )}
+        ) : null}
       </AnimatePresence>
 
       <UploadModal

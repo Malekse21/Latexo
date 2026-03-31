@@ -8,6 +8,8 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/context/user-context";
 import { motion } from "framer-motion";
+import { usePaymentModal } from "@/lib/hooks/usePaymentModal";
+import { PaymentModal } from "@/components/payment/PaymentModal";
 
 export function DashboardNavbar() {
   const router = useRouter();
@@ -15,6 +17,7 @@ export function DashboardNavbar() {
   const { profile, user, loading, signOut, language, setLanguage, t } = useUser();
   const avatarUrl = profile?.avatar_url;
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const { open: openPaymentModal } = usePaymentModal();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -54,6 +57,7 @@ export function DashboardNavbar() {
   };
 
   return (
+    <>
     <nav className="fixed top-0 left-0 right-0 h-16 border-b border-[#E5E5E5] bg-white z-50 flex items-center justify-between px-3 md:px-6">
       {/* Left: Logo */}
       <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
@@ -94,7 +98,9 @@ export function DashboardNavbar() {
           <span className={`text-xs md:text-[13px] font-black uppercase tracking-widest ${highlightCredits ? 'text-white' : 'text-black'}`}>
             {loading ? '...' : profile?.credits || 0} <span className="hidden sm:inline ml-1 font-bold">{t('common.credits')}</span>
           </span>
-          <button className={`flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full ml-1 transition-colors ${
+          <button 
+            onClick={() => openPaymentModal('pack-selection')}
+            className={`flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full ml-1 transition-colors cursor-pointer ${
             highlightCredits ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'
           }`}>
             <Plus className="w-2 md:w-3 h-2 md:h-3" strokeWidth={3} />
@@ -167,5 +173,7 @@ export function DashboardNavbar() {
         </div>
       </div>
     </nav>
+    <PaymentModal />
+    </>
   );
 }

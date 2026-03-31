@@ -48,6 +48,9 @@ export const useAppStore = create<AppState>()(
     {
       name: 'latexo-app-storage', // unique name
       partialize: (state) => ({ 
+        selectedReport: state.selectedReport,
+        selectedReportId: state.selectedReportId,
+        credits: state.credits,
         // We exclude isSidebarCollapsed to fix hydration mismatch errors on Vercel
       }),
     }

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, STIX_Two_Text } from "next/font/google";
+import { Inter, STIX_Two_Text, Fraunces, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { UserProvider } from "@/lib/context/user-context";
 import NextTopLoader from "nextjs-toploader";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const stixTwoText = STIX_Two_Text({ subsets: ["latin"], variable: "--font-latex" });
+const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
+const dmMono = DM_Mono({ weight: ["400", "500"], subsets: ["latin"], variable: "--font-dm-mono" });
 
 export const metadata: Metadata = {
   title: "Latexo - Your PFE, Perfected",
@@ -21,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${stixTwoText.variable}`}>
+    <html lang="en" className={`${inter.variable} ${stixTwoText.variable} ${fraunces.variable} ${dmMono.variable}`}>
       <body className={`${inter.className} antialiased font-sans text-gray-900 bg-gray-50`}>
         <NextTopLoader
           color="#000000"

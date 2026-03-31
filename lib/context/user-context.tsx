@@ -140,24 +140,33 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       async (event, currentSession) => {
         if (!mounted) return;
         
+        // Skip events that don't require UI updates — TOKEN_REFRESHED and
+        // INITIAL_SESSION fire when the tab regains focus or on hydration.
+        // Updating state on these events creates new object references that
+        // cascade re-renders and wipe out dashboard data.
+        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          console.log(`[UserContext] Skipping benign event: ${event}`);
+          return;
+        }
+        
+        console.log(`[UserContext] Processing event: ${event}`);
+        
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         
         if (currentSession?.user) {
-          if (event === 'SIGNED_IN') {
-            
-            // Only re-trigger the loading/fetch sequence explicitly on SIGNED_IN
-            setLoading(true);
+          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+            // Background profile refresh — DON'T set loading to true.
+            // initializeSession already handles the initial load.
+            // Setting loading=true here would wipe the dashboard that's
+            // already visible and cause the spinner to flash.
             const data = await fetchProfile(currentSession.user.id);
             if (mounted) {
               if (data) setProfile(data);
-              console.log('setLoading false called (SIGNED_IN)');
+              // Ensure loading is false (handles edge case where
+              // SIGNED_IN fires before initializeSession completes)
               setLoading(false);
             }
-          } else if (event === 'USER_UPDATED') {
-            // Background refresh, no loading UI needed
-            const data = await fetchProfile(currentSession.user.id);
-            if (mounted && data) setProfile(data);
           }
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);

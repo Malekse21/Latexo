@@ -3,6 +3,7 @@
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
 import { Clock, ArrowRight, Sparkles, TrendingDown } from "lucide-react";
 import Image from "next/image";
+import { usePaymentModal } from "@/lib/hooks/usePaymentModal";
 
 interface Report {
   id: string;
@@ -46,6 +47,17 @@ export function CardsView({
   const bestScore = profile?.best_score || 0;
   const gap = lastGrade !== null ? bestScore - lastGrade : 0;
   const hasSessionData = lastGrade !== null && bestScore > 0;
+  const { open: openPaymentModal } = usePaymentModal();
+
+  const handleSimulateClick = () => {
+    const credits = profile?.credits || 0;
+    const sessionCost = 10; // Minimum session cost
+    if (credits < sessionCost) {
+      openPaymentModal('credits-wall', sessionCost);
+    } else {
+      onNavigateToDefense();
+    }
+  };
 
   return (
     <div className="flex flex-col h-auto md:h-[calc(100vh-200px)]">
@@ -184,7 +196,7 @@ export function CardsView({
 
             {/* CTA — Always visible */}
             <button
-              onClick={onNavigateToDefense}
+              onClick={handleSimulateClick}
               className="w-full flex items-center justify-center gap-2.5 py-3 bg-black text-white text-xs font-bold font-mono uppercase tracking-widest hover:bg-zinc-800 transition-all duration-200 cursor-pointer group mt-2"
             >
               <span>{t('dashboard.cta_simulate')}</span>
