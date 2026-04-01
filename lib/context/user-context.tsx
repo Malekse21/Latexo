@@ -5,6 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
+/** Detect AbortError thrown when React unmounts mid-fetch */
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof DOMException && err.name === 'AbortError' ||
+    (err instanceof Error && err.message?.includes('aborted'))
+  );
+}
+
 interface Profile {
   id: string;
   full_name: string | null;
@@ -54,7 +62,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     fr: require("@/lib/i18n/fr.json")
   };
 
-  const t = (key: string, variables?: Record<string, string | number>) => {
+  const t = React.useCallback((key: string, variables?: Record<string, string | number>) => {
     const keys = key.split('.');
     let value = (translations[language] as any);
     
@@ -73,7 +81,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     return value;
-  };
+  }, [language]); // translations are purely derived from language
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
 
@@ -85,52 +93,69 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Supabase wraps AbortError in its error response — silently ignore
+        if (error.message?.includes('aborted')) return null;
+
+        console.error(
+          "Error fetching profile:",
+          error.message ?? "Unknown error",
+          `(code: ${error.code ?? "N/A"}, status: ${(error as any).status ?? "N/A"})`
+        );
+
+        if (error.code === 'PGRST116') {
+          console.warn("Profile not found for user. Signing out...");
+          await signOut();
+        }
+        return null;
+      }
       return data;
     } catch (error: any) {
-      console.error("Error fetching profile:", error);
-      
-      if (error?.code === 'PGRST116') {
-        console.warn("Profile not found for user. Signing out...");
-        await signOut();
-      }
+      // Silently ignore AbortError — React unmounted while fetch was in-flight
+      if (isAbortError(error)) return null;
+      console.error("Unexpected error fetching profile:", error?.message ?? error);
       return null;
     }
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = React.useCallback(async () => {
     if (user) {
       const data = await fetchProfile(user.id);
       if (data) setProfile(data);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     let mounted = true;
 
     const initializeSession = async () => {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      console.log("[UserContext] initializeSession on mount:", { user, session, userError, sessionError });
-      
-      if (!mounted) return;
-      
-      setSession(session);
-      setUser(user ?? null);
-      
-      if (user) {
-        const data = await fetchProfile(user.id);
-        if (mounted) {
-          if (data) setProfile(data);
-          console.log('setLoading false called (initializeSession success)');
-          setLoading(false);
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        console.log("[UserContext] initializeSession on mount:", { user, session, userError, sessionError });
+        
+        if (!mounted) return;
+        
+        setSession(session);
+        setUser(user ?? null);
+        
+        if (user) {
+          const data = await fetchProfile(user.id);
+          if (mounted) {
+            if (data) setProfile(data);
+            setLoading(false);
+          }
+        } else {
+          if (mounted) {
+            setLoading(false);
+          }
         }
-      } else {
-        if (mounted) {
-          console.log('setLoading false called (initializeSession no user)');
-          setLoading(false);
-        }
+      } catch (err) {
+        // AbortError fires when React unmounts during navigation — harmless
+        if (isAbortError(err)) return;
+        console.error("[UserContext] initializeSession error:", err);
+        if (mounted) setLoading(false);
       }
     };
 
@@ -142,10 +167,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         
         // Skip events that don't require UI updates — TOKEN_REFRESHED and
         // INITIAL_SESSION fire when the tab regains focus or on hydration.
-        // Updating state on these events creates new object references that
-        // cascade re-renders and wipe out dashboard data.
         if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          console.log(`[UserContext] Skipping benign event: ${event}`);
           return;
         }
         
@@ -156,24 +178,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         
         if (currentSession?.user) {
           if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-            // Background profile refresh — DON'T set loading to true.
-            // initializeSession already handles the initial load.
-            // Setting loading=true here would wipe the dashboard that's
-            // already visible and cause the spinner to flash.
-            const data = await fetchProfile(currentSession.user.id);
-            if (mounted) {
-              if (data) setProfile(data);
-              // Ensure loading is false (handles edge case where
-              // SIGNED_IN fires before initializeSession completes)
-              setLoading(false);
+            try {
+              const data = await fetchProfile(currentSession.user.id);
+              if (mounted) {
+                if (data) setProfile(data);
+                setLoading(false);
+              }
+            } catch (err) {
+              if (!isAbortError(err)) {
+                console.error("[UserContext] Profile fetch in auth callback:", err);
+              }
+              if (mounted) setLoading(false);
             }
           }
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);
-          if (mounted) {
-             console.log('setLoading false called (SIGNED_OUT)');
-             setLoading(false);
-          }
+          if (mounted) setLoading(false);
         }
       }
     );
@@ -184,7 +204,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signOut = async () => {
+  const signOut = React.useCallback(async () => {
     // 1. Optimistic UI updates for immediate feedback
     setUser(null);
     setSession(null);
@@ -210,22 +230,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     // 5. Refresh the router to update any Server Components mapped to the auth state
     router.refresh();
-  };
+  }, [router, supabase]);
+
+  const value = React.useMemo(() => ({
+    user, 
+    session, 
+    profile, 
+    loading, 
+    isSidebarCollapsed, 
+    toggleSidebar, 
+    language,
+    setLanguage,
+    t,
+    signOut, 
+    refreshProfile 
+  }), [user, session, profile, loading, isSidebarCollapsed, language, t, signOut, refreshProfile]);
 
   return (
-    <UserContext.Provider value={{ 
-      user, 
-      session, 
-      profile, 
-      loading, 
-      isSidebarCollapsed, 
-      toggleSidebar, 
-      language,
-      setLanguage,
-      t,
-      signOut, 
-      refreshProfile 
-    }}>
+    <UserContext.Provider value={value}>
       {children}
     </UserContext.Provider>
   );

@@ -85,28 +85,30 @@ function DashboardContent() {
     window.history.replaceState(null, '', url);
   };
 
+  // Single robust fetch effect
   useEffect(() => {
-    if (userLoading) return;
-    if (!profile?.id) return;
+    if (userLoading || !profile?.id) return;
+    
+    // Only fetch if we haven't fetched yet 
     if (hasLoadedOnce.current) return;
-
     hasLoadedOnce.current = true;
-    fetchActiveReport(profile.id);
-    fetchReadinessData(profile.id);
-    fetchMemorySnapshot(profile.id);
-  }, [profile?.id, language, userLoading]);
 
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    if (!profile?.id) return;
-    // language changed intentionally, re-fetch
-    hasLoadedOnce.current = false;
     fetchActiveReport(profile.id);
     fetchReadinessData(profile.id);
     fetchMemorySnapshot(profile.id);
+  }, [profile?.id, userLoading]);
+
+  // Re-fetch only if language explicitly changes after initial load
+  const prevLanguage = useRef(language);
+  useEffect(() => {
+    if (prevLanguage.current !== language) {
+      prevLanguage.current = language;
+      if (profile?.id) {
+        fetchActiveReport(profile.id);
+        fetchReadinessData(profile.id);
+        fetchMemorySnapshot(profile.id);
+      }
+    }
   }, [language, profile?.id]);
 
   useEffect(() => {

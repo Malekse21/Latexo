@@ -16,6 +16,60 @@ interface PendingOrder {
   createdAt: string;
 }
 
+interface Metrics {
+  revenueToday: number;
+  revenueWeek: number;
+  revenueMonth: number;
+  pendingCount: number;
+  pendingValue: number;
+  totalRevenue: number;
+  avgPackValue: number;
+  packBreakdown: Record<string, number>;
+  totalUsers: number;
+  newUsersToday: number;
+  newUsersWeek: number;
+  paidUsersCount: number;
+  conversionRate: number;
+  usersZeroCredits: number;
+  avgCreditsPaidUser: number;
+  users2PlusSessions: number;
+  users5PlusSessions: number;
+  avgSessionsPaidUser: number;
+  usersActiveThisWeek: number;
+  maxStreakAllTime: number;
+  dormantTopUsers: Array<{
+    name: string;
+    sessions: number;
+    daysSinceLast: number;
+  }>;
+}
+
+function MetricCard({ title, value, suffix = "", isAlert = false }: { title: string, value: string | number, suffix?: string, isAlert?: boolean }) {
+  return (
+    <div className={`p-6 flex flex-col justify-between border-4 transition-transform hover:-translate-y-1 hover:translate-x-1 ${
+      isAlert 
+        ? 'border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_#450a0a]' 
+        : 'border-black bg-white text-black shadow-[4px_4px_0px_#000]'
+    }`}>
+      <span className={`text-xs font-black uppercase tracking-[0.2em] block mb-3 ${
+        isAlert ? 'text-red-100' : 'text-neutral-500'
+      }`}>
+        {title}
+      </span>
+      <span className={`text-4xl lg:text-5xl font-black tracking-tighter ${
+        isAlert ? 'text-white' : 'text-black'
+      }`}>
+        {value} 
+        {suffix && (
+          <span className={`text-xl lg:text-2xl font-black ml-2 ${
+            isAlert ? 'text-red-200' : 'text-neutral-300'
+          }`}>{suffix}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export default function AdminPortalPage() {
   const [token, setToken] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -23,16 +77,31 @@ export default function AdminPortalPage() {
   
   // Data state
   const [orders, setOrders] = useState<PendingOrder[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'orders' | 'metrics'>('orders');
+
+  // Sanitize token: strip any non-ASCII chars that break fetch headers
+  const sanitizeToken = (raw: string): string =>
+    raw.replace(/[^\x20-\x7E]/g, '').trim();
 
   // Restore session
   useEffect(() => {
     const saved = localStorage.getItem("OP_TOKEN");
     if (saved) {
-      setToken(saved);
-      setIsAuthenticated(true);
+      const clean = sanitizeToken(saved);
+      if (clean) {
+        setToken(clean);
+        setIsAuthenticated(true);
+        // Re-save sanitized version
+        localStorage.setItem("OP_TOKEN", clean);
+      } else {
+        localStorage.removeItem("OP_TOKEN");
+      }
     }
   }, []);
 
@@ -45,10 +114,11 @@ export default function AdminPortalPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputToken.trim()) return;
-    setToken(inputToken.trim());
+    const clean = sanitizeToken(inputToken);
+    if (!clean) return;
+    setToken(clean);
     setIsAuthenticated(true);
-    localStorage.setItem("OP_TOKEN", inputToken.trim());
+    localStorage.setItem("OP_TOKEN", clean);
     setInputToken("");
   };
 
@@ -56,6 +126,7 @@ export default function AdminPortalPage() {
     setToken("");
     setIsAuthenticated(false);
     setOrders([]);
+    setMetrics(null);
     localStorage.removeItem("OP_TOKEN");
   };
 
@@ -63,17 +134,28 @@ export default function AdminPortalPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/payments/orders/pending", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) {
+      const [ordersRes, metricsRes] = await Promise.all([
+        fetch("/api/admin/payments/orders/pending", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("/api/admin/metrics", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ]);
+
+      if (ordersRes.status === 401 || metricsRes.status === 401) {
         handleLogout();
         setError("Token expiré ou invalide.");
         return;
       }
-      if (!res.ok) throw new Error("Erreur de récupération.");
-      const data = await res.json();
-      setOrders(data);
+
+      if (!ordersRes.ok || !metricsRes.ok) throw new Error("Erreur de récupération.");
+      
+      const ordersData = await ordersRes.json();
+      const metricsData = await metricsRes.json();
+      
+      setOrders(ordersData);
+      setMetrics(metricsData);
     } catch (err: any) {
       setError(err.message || "Erreur de connexion.");
     } finally {
@@ -98,8 +180,9 @@ export default function AdminPortalPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur lors de la confirmation.");
 
-      // Remove confirmed order from list
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      // Remove confirmed order from list and refresh metrics instead of just filtering
+      // since the metrics data needs to update (e.g. Revenue Today goes up, Pending Value goes down)
+      fetchOrders();
     } catch (err: any) {
       setError(err.message || "Erreur de connexion.");
     } finally {
@@ -190,98 +273,223 @@ export default function AdminPortalPage() {
           </div>
         )}
 
-        {/* List */}
-        {isLoading && orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 opacity-50">
-            <Loader2 className="w-12 h-12 animate-spin mb-4" />
-            <span className="uppercase tracking-widest font-bold">Scanning...</span>
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="border-4 border-black border-dashed p-16 text-center">
-            <p className="text-2xl font-black uppercase text-neutral-400">
-              No Pending Orders
-            </p>
-            <p className="text-sm font-bold text-neutral-400 mt-2">
-              System is clear.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {orders.map((order) => (
-              <div
-                key={order.id}
-                className="bg-white border-2 border-black p-6 flex flex-col justify-between"
-              >
-                <div className="space-y-4 mb-8">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="bg-black text-white text-[10px] uppercase font-black px-2 py-1 mb-2 inline-block">
-                        {order.packId}
-                      </span>
-                      <h3 className="text-2xl font-black tracking-tighter">
-                        +{order.credits} CR
-                      </h3>
-                      <p className="text-xl font-bold text-neutral-500">
-                        {Number(order.amountDt).toFixed(3)} DT
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-neutral-400">
-                        {new Date(order.createdAt).toLocaleDateString()}
-                      </p>
-                      <p className="text-xs font-bold text-neutral-400">
-                        {new Date(order.createdAt).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  </div>
+        {/* Navigation Tabs */}
+        <div className="flex gap-4 mb-8">
+          <button 
+            onClick={() => setActiveTab('orders')}
+            className={`flex-1 py-4 border-4 border-black font-black uppercase tracking-[0.2em] transition-transform ${activeTab === 'orders' ? 'bg-black text-white' : 'bg-white text-black hover:-translate-y-1 hover:translate-x-1 shadow-[4px_4px_0px_#000]'}`}
+          >
+            Pending Orders {orders.length > 0 && `(${orders.length})`}
+          </button>
+          <button 
+            onClick={() => setActiveTab('metrics')}
+            className={`flex-1 py-4 border-4 border-black font-black uppercase tracking-[0.2em] transition-transform flex items-center justify-center gap-2 ${activeTab === 'metrics' ? 'bg-black text-white' : 'bg-white text-black hover:-translate-y-1 hover:translate-x-1 shadow-[4px_4px_0px_#000]'}`}
+          >
+            Platform Metrics
+            {metrics && (metrics.pendingCount > 0) && (
+              <span className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></span>
+            )}
+          </button>
+        </div>
 
-                  <div className="pt-4 border-t-2 border-black border-dashed grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
-                        D17 Sender
-                      </span>
-                      <span className="font-black text-lg">
-                        {order.d17Phone}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
-                        Reference
-                      </span>
-                      <span className="font-bold">
-                        {order.reference}
-                      </span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
-                        User
-                      </span>
-                      <span className="font-bold text-sm">
-                        {order.userName}
-                      </span>
-                    </div>
+        {/* METRICS DASHBOARD */}
+        {activeTab === 'metrics' && metrics && (
+          <div className="space-y-12">
+            
+            {/* SECTION 1 - REVENUE */}
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-widest mb-6 pb-2 border-b-4 border-black">
+                Section 1 — Revenue
+              </h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard title="Revenue Today" value={metrics.revenueToday} suffix="DT" />
+                <MetricCard title="This Week" value={metrics.revenueWeek} suffix="DT" />
+                <MetricCard title="This Month" value={metrics.revenueMonth} suffix="DT" />
+                <MetricCard title="All Time" value={metrics.totalRevenue} suffix="DT" />
+                
+                <MetricCard 
+                  title="Pending Value" 
+                  value={metrics.pendingValue} 
+                  suffix="DT" 
+                  isAlert={metrics.pendingValue > 0} 
+                />
+                <MetricCard 
+                  title="Pending Orders" 
+                  value={metrics.pendingCount} 
+                  isAlert={metrics.pendingCount > 0} 
+                />
+                <MetricCard title="Avg Pack Value" value={Math.round(metrics.avgPackValue)} suffix="DT" />
+                
+                <div className="bg-black text-white border-4 border-black p-6 flex flex-col justify-between shadow-[4px_4px_0px_#000] hover:-translate-y-1 hover:translate-x-1 transition-transform">
+                  <span className="text-xs text-neutral-400 font-black uppercase tracking-[0.2em] block mb-4">
+                    Top Packs
+                  </span>
+                  <div className="text-sm font-black flex-1 flex flex-col justify-center space-y-3">
+                    {Object.keys(metrics.packBreakdown).length > 0 ? (
+                      Object.entries(metrics.packBreakdown).map(([pack, count]) => (
+                        <div key={pack} className="flex justify-between items-end border-b-2 border-neutral-800 pb-2 last:border-0 last:pb-0">
+                          <span className="uppercase text-neutral-300 tracking-wider text-xs">{pack}</span>
+                          <span className="text-xl leading-none">{count}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-neutral-600 text-xs">No data</span>
+                    )}
                   </div>
                 </div>
-
-                <button
-                  onClick={() => handleConfirm(order.id)}
-                  disabled={confirmingId === order.id}
-                  className="w-full bg-black text-white p-4 font-black uppercase flex items-center justify-center gap-2 hover:bg-neutral-800 disabled:opacity-50 transition-colors"
-                >
-                  {confirmingId === order.id ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Confirming...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-5 h-5" />
-                      Acknowledge Payment
-                    </>
-                  )}
-                </button>
               </div>
-            ))}
+            </div>
+
+            {/* SECTION 2 - USERS */}
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-widest mb-6 pb-2 border-b-4 border-black">
+                Section 2 — Users
+              </h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard title="Total Users" value={metrics.totalUsers} />
+                <MetricCard title="New Today" value={metrics.newUsersToday} />
+                <MetricCard title="New This Week" value={metrics.newUsersWeek} />
+                <MetricCard title="Paid Users" value={metrics.paidUsersCount} />
+                
+                <MetricCard title="Conversion %" value={metrics.conversionRate.toFixed(1)} suffix="%" />
+                <MetricCard title="Users w/ 0 CR" value={metrics.usersZeroCredits} />
+                <MetricCard title="Avg CR (Paid)" value={Math.round(metrics.avgCreditsPaidUser)} suffix="CR" />
+              </div>
+            </div>
+
+            {/* SECTION 3 - RETENTION */}
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-widest mb-6 pb-2 border-b-4 border-black">
+                Section 3 — Retention
+              </h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard title="2+ Sessions" value={metrics.users2PlusSessions} />
+                <MetricCard title="Power (5+)" value={metrics.users5PlusSessions} />
+                <MetricCard title="Avg Sess. (Paid)" value={metrics.avgSessionsPaidUser.toFixed(1)} />
+                <MetricCard title="Active This Week" value={metrics.usersActiveThisWeek} />
+                <MetricCard title="Max Platform Streak" value={metrics.maxStreakAllTime} suffix="Days" />
+                
+                <div className="bg-black text-white border-4 border-black p-6 flex flex-col justify-between shadow-[4px_4px_0px_#000] hover:-translate-y-1 hover:translate-x-1 transition-transform col-span-2 lg:col-span-3">
+                  <span className="text-xs text-neutral-400 font-black uppercase tracking-[0.2em] block mb-4">
+                    At-Risk Top Users (Going Cold)
+                  </span>
+                  <div className="text-sm font-black flex-1 flex flex-col justify-center space-y-3">
+                    {metrics.dormantTopUsers.length > 0 ? (
+                      metrics.dormantTopUsers.map((user, idx) => (
+                        <div key={idx} className="flex justify-between items-end border-b-2 border-neutral-800 pb-2 last:border-0 last:pb-0">
+                          <span className="uppercase text-neutral-300 tracking-wider text-xs">{user.name}</span>
+                          <div className="flex items-center gap-4 text-xs font-bold">
+                            <span className="text-neutral-500">{user.sessions} Sessions</span>
+                            <span className="text-red-400">{user.daysSinceLast} days inactive</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-neutral-600 text-xs">No users at risk.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LIST DASHBOARD */}
+        {activeTab === 'orders' && (
+          <div>
+            {isLoading && orders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                <Loader2 className="w-12 h-12 animate-spin mb-4" />
+                <span className="uppercase tracking-widest font-bold">Scanning...</span>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="border-4 border-black border-dashed p-16 text-center">
+                <p className="text-2xl font-black uppercase text-neutral-400">
+                  No Pending Orders
+                </p>
+                <p className="text-sm font-bold text-neutral-400 mt-2">
+                  System is clear.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {orders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="bg-white border-2 border-black p-6 flex flex-col justify-between"
+                  >
+                    <div className="space-y-4 mb-8">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="bg-black text-white text-[10px] uppercase font-black px-2 py-1 mb-2 inline-block">
+                            {order.packId}
+                          </span>
+                          <h3 className="text-2xl font-black tracking-tighter">
+                            +{order.credits} CR
+                          </h3>
+                          <p className="text-xl font-bold text-neutral-500">
+                            {Number(order.amountDt).toFixed(3)} DT
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-neutral-400">
+                            {new Date(order.createdAt).toLocaleDateString()}
+                          </p>
+                          <p className="text-xs font-bold text-neutral-400">
+                            {new Date(order.createdAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t-2 border-black border-dashed grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                            D17 Sender
+                          </span>
+                          <span className="font-black text-lg">
+                            {order.d17Phone}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                            Reference
+                          </span>
+                          <span className="font-bold">
+                            {order.reference}
+                          </span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-[10px] text-neutral-400 font-bold uppercase block mb-1">
+                            User
+                          </span>
+                          <span className="font-bold text-sm">
+                            {order.userName}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleConfirm(order.id)}
+                      disabled={confirmingId === order.id}
+                      className="w-full bg-black text-white p-4 font-black uppercase flex items-center justify-center gap-2 hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+                    >
+                      {confirmingId === order.id ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Confirming...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-5 h-5" />
+                          Acknowledge Payment
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

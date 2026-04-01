@@ -74,6 +74,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Check for existing pending orders ────────
+    const { data: pendingOrders } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'PENDING')
+      .limit(1);
+
+    if (pendingOrders && pendingOrders.length > 0) {
+      return NextResponse.json(
+        { error: 'Tu as déjà une commande en attente. Veuillez finaliser le paiement actuel.' },
+        { status: 429 }
+      );
+    }
+
     const pack = PACKS[packId];
 
     // ── Generate collision-safe reference ─────────
