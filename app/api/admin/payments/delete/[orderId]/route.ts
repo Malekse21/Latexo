@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { orderId: string } }
+  { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
     const authHeader = request.headers.get('authorization');
