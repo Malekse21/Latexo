@@ -5,7 +5,7 @@ import { motion, useSpring, useTransform } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/context/user-context";
 import NextImage from "next/image";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase, Download, Loader2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -68,6 +68,7 @@ const JURY_MEMBERS = [
 // ─── Component ────────────────────────────────────────────────
 export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
   const { profile, user } = useUser();
+  const router = useRouter();
   const avatarUrl = profile?.avatar_url;
   const [simulation, setSimulation] = useState<SimulationData | null>(null);
   const [lastScore, setLastScore] = useState<number | null>(null);
@@ -76,6 +77,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
 
   useEffect(() => {
     async function fetchData() {
+      console.log('[AftermathDashboard] fetchData called with simulationId =', simulationId);
       const supabase = createClient();
 
       // Fetch current simulation
@@ -86,11 +88,12 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
         .single();
 
       if (error) {
-        console.error("Failed to fetch simulation:", error);
+        console.error("[AftermathDashboard] Failed to fetch simulation:", error);
         setLoading(false);
         return;
       }
 
+      console.log('[AftermathDashboard] Simulation fetched successfully. grade =', data?.final_grade, 'status =', data?.status);
       setSimulation(data);
 
       // Fetch previous simulation for "last score"
@@ -109,6 +112,7 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
       }
 
       setLoading(false);
+      console.log('[AftermathDashboard] Loading complete, rendering results.');
     }
 
     fetchData();
@@ -450,13 +454,13 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
             <RefreshCw className="w-4 h-4 text-gray-400" />
             <span className="text-sm text-gray-300">Ready for another round?</span>
           </div>
-          <Link
-            href="/dashboard?tab=defense"
-            className="group inline-flex items-center gap-1.5 bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-100 hover:scale-[1.02] active:scale-95"
-          >
-            Retry
-            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </Link>
+          <button
+              onClick={() => router.push('/dashboard?tab=defense')}
+              className="group inline-flex items-center gap-1.5 bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-100 hover:scale-[1.02] active:scale-95"
+            >
+              Retry
+              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            </button>
         </motion.div>
       </div>
     </div>

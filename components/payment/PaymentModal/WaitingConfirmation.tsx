@@ -18,6 +18,7 @@ export function WaitingConfirmation() {
 
   const [copied, setCopied] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [rejected, setRejected] = useState(false);
   const [pollCount, setPollCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,6 +51,10 @@ export function WaitingConfirmation() {
             goTo('success');
             return;
           }
+        } else if (res.status === 404) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setRejected(true);
+          return;
         }
       } catch {
         // Network error — will retry on next interval
@@ -107,7 +112,11 @@ export function WaitingConfirmation() {
       </div>
 
       {/* ── Status text ─────────────────────────────── */}
-      {!timedOut ? (
+      {rejected ? (
+        <p className="text-base font-bold text-red-600 mb-2 font-mono uppercase tracking-widest text-center">
+          Commande rejetée ou annulée par l'administrateur.
+        </p>
+      ) : !timedOut ? (
         <p
           className="text-lg font-black text-black mb-2 font-mono uppercase tracking-widest text-center"
           style={{
@@ -137,14 +146,14 @@ export function WaitingConfirmation() {
         )}
       </button>
 
-      {!timedOut && (
+      {!timedOut && !rejected && (
         <p className="text-[11px] mb-5 text-neutral-500 font-medium text-center">
           Confirmation généralement en moins de 30 min
         </p>
       )}
 
       {/* ── Poll indicator ──────────────────────────── */}
-      {!timedOut && (
+      {!timedOut && !rejected && (
         <div className="flex items-center gap-2 mb-6 bg-neutral-100 px-3 py-1 rounded-full border border-neutral-200">
           <div
             className="w-2 h-2 rounded-full bg-black"
@@ -180,9 +189,15 @@ export function WaitingConfirmation() {
           <div className="h-px w-full bg-neutral-200 my-2" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase tracking-widest font-bold text-neutral-500 font-mono">Statut</span>
-            <span className="text-[10px] uppercase tracking-widest font-black px-2 py-1 bg-yellow-100 text-yellow-800 font-mono border border-yellow-300">
-              EN ATTENTE
-            </span>
+            {rejected ? (
+              <span className="text-[10px] uppercase tracking-widest font-black px-2 py-1 bg-red-100 text-red-800 font-mono border border-red-300">
+                REJETÉE
+              </span>
+            ) : (
+              <span className="text-[10px] uppercase tracking-widest font-black px-2 py-1 bg-yellow-100 text-yellow-800 font-mono border border-yellow-300">
+                EN ATTENTE
+              </span>
+            )}
           </div>
         </div>
       </div>

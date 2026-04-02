@@ -377,15 +377,18 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   }, [phase, isRecording, isProcessingAudio, isAISpeaking, recognition, messages]);
 
   // Cycle loading messages — step 0=intro, 1/2/3=jury members, 4=ready to transition
-  // Caps at step 3 (last jury card). Step 4 is set by a separate effect once initialData is ready.
+  // Caps at step 3 (last jury card). Step 4 is set by the unified transition effect below.
   useEffect(() => {
     if (phase === "loading") {
+      console.log('[Loading] Phase entered, starting step ticker from 0');
       const interval = setInterval(() => {
         setLoadingStep((prev) => {
           if (prev >= 3) {
             clearInterval(interval);
+            console.log('[Loading] Step ticker capped at 3, waiting for initialData');
             return prev; // Stay at 3 — don't go to 4 yet
           }
+          console.log('[Loading] Step ticker:', prev, '->', prev + 1);
           return prev + 1;
         });
       }, 2500);
@@ -395,11 +398,17 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     }
   }, [phase]);
 
-  // Only advance to step 4 (trigger arena transition) when initialData is ready AND all jury cards have been shown
+  // UNIFIED transition effect: advance to step 4 when BOTH conditions are met:
+  // 1. loadingStep >= 3 (all jury cards shown)
+  // 2. initialData is truthy (API response arrived)
+  // This handles both orderings: data-before-step3 and data-after-step3.
   useEffect(() => {
-    if (phase === "loading" && loadingStep === 3 && initialData) {
-      // the last jury card is visible for at least 2.5s (matching the interval of previous jurors)
-      const timer = setTimeout(() => setLoadingStep(4), 2500);
+    if (phase === "loading" && loadingStep >= 3 && initialData && loadingStep < 4) {
+      console.log('[Loading] Both conditions met (step=%d, initialData=%s). Scheduling step 4 in 2.5s...', loadingStep, !!initialData);
+      const timer = setTimeout(() => {
+        console.log('[Loading] Advancing to step 4 now');
+        setLoadingStep(4);
+      }, 2500);
       return () => clearTimeout(timer);
     }
   }, [phase, loadingStep, initialData]);
@@ -500,12 +509,17 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Transition to Arena when ready (step 4 = all jury shown, safe to proceed)
   useEffect(() => {
     if (phase === "loading" && loadingStep === 4 && initialData) {
+      console.log('[Arena Transition] Step 4 reached with initialData. Entering arena NOW.');
       const { firstJuryMessage, sessionFirstQuestion, sessionAgentId } = initialData;
+
+      // Clear initial data FIRST to prevent re-triggering on subsequent renders
+      setInitialData(null);
 
       // Start Arena
       setTimeRemaining(config.duration * 60);
       setSessionStartTime(Date.now());
       setPhase("arena");
+      console.log('[Arena Transition] Phase set to arena, timeRemaining =', config.duration * 60);
 
       // Determine the first dynamic question's speaker
       const AGENT_TO_SPEAKER: Record<number, "technical" | "academic" | "business"> = {
@@ -553,9 +567,6 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
           setActiveSpeaker(null);
         }
       });
-      
-      // Clear initial data to prevent re-triggering
-      setInitialData(null);
     }
   }, [phase, loadingStep, initialData, config.duration, config.language]);
 
@@ -622,9 +633,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     }
 
     setIsProcessing(true);
+    console.log('[Init] handleInitialize called. credits=%d, cost=%d', profile.credits, currentCost);
 
     try {
       setPhase("loading");
+      console.log('[Init] Phase set to loading');
 
       const finalReportId = reportId || profile?.active_report_id;
       
@@ -632,7 +645,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
         throw new Error("No active report selected. Please upload or select a report first.");
       }
 
-      console.log("🚀 Initializing Simulation for ID:", finalReportId);
+      console.log("🚀 [Init] Calling /api/simulation/initialize for report:", finalReportId);
 
       // Step 1: Generate skeleton + first jury greeting
       const response = await fetch("/api/simulation/initialize", {
@@ -647,13 +660,15 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        console.error("Initialize API Error:", errData);
+        console.error("[Init] Initialize API Error:", errData);
         throw new Error(errData.error || `Simulation initialization failed (${response.status})`);
       }
 
       const data = await response.json();
+      console.log('[Init] Initialize API success. firstJuryMessage:', data.firstJuryMessage?.text?.substring(0, 40));
 
       // Step 2: Create the live session (question bank, session state, credit deduction)
+      console.log('[Init] Calling /api/sessions/start...');
       const sessionRes = await fetch("/api/sessions/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -666,22 +681,24 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
       if (!sessionRes.ok) {
         const errData = await sessionRes.json().catch(() => ({}));
-        console.error("Session Start Error:", errData);
+        console.error("[Init] Session Start Error:", errData);
         throw new Error(errData.error || `Session creation failed (${sessionRes.status})`);
       }
 
       const sessionData = await sessionRes.json();
-      console.log("✅ Live session created:", sessionData.sessionId);
+      console.log("✅ [Init] Live session created:", sessionData.sessionId, 'firstQuestion:', sessionData.firstQuestion?.substring(0, 40));
 
       await refreshProfile();
+      console.log('[Init] Profile refreshed. Setting initialData now.');
       // Merge session data (firstQuestion, agentId) into initialData so the transition effect can use it
       setInitialData({
         ...data,
         sessionFirstQuestion: sessionData.firstQuestion,
         sessionAgentId: sessionData.agentId,
       });
+      console.log('[Init] initialData SET. Waiting for loadingStep to reach 3+...');
     } catch (error) {
-      console.error("Failed to initialize simulation:", error);
+      console.error("[Init] Failed to initialize simulation:", error);
       alert("Failed to start simulation. Please try again.");
       setPhase("config");
     } finally {
@@ -827,8 +844,12 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Closing phase: Static farewell remark, plays sounds, then evaluates
   const handleClosingPhase = async () => {
     // Guard against double-invocation from rapid timer ticks
-    if (isClosingRef.current) return;
+    if (isClosingRef.current) {
+      console.log('[Closing] Already closing, skipping duplicate call');
+      return;
+    }
     isClosingRef.current = true;
+    console.log('[Closing] handleClosingPhase fired. messages count =', messagesRef.current.length);
 
     // Stop any recording
     if (recognition) recognition.stop();
@@ -863,6 +884,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
     // Fire evaluation after a fixed delay (enough for farewell to display)
     // This is decoupled from the speech callback to prevent silent failures
+    console.log('[Closing] Scheduling runEvaluation in 4s...');
     setTimeout(() => runEvaluation(), 4000);
   };
 
@@ -872,11 +894,16 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
   // Run the evaluation (called after closing remarks)
   const runEvaluation = async () => {
     // Guard against double-evaluation
-    if (isEvaluatingRef.current) return;
+    if (isEvaluatingRef.current) {
+      console.log('[Eval] Already evaluating, skipping duplicate call');
+      return;
+    }
     isEvaluatingRef.current = true;
+    console.log('[Eval] runEvaluation started. transcript length =', messagesRef.current.length);
 
     setIsEvaluating(true);
     try {
+      console.log('[Eval] Calling /api/simulation/evaluate...');
       const response = await fetch("/api/simulation/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -893,15 +920,17 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Evaluation API Error:", response.status, errorText);
+        console.error("[Eval] API Error:", response.status, errorText);
         throw new Error(`Evaluation failed: ${response.status} ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('[Eval] API success. simulation_id =', data.simulation_id, 'grade =', data.final_grade);
       setEvaluationResults(data);
       setPhase("aftermath");
+      console.log('[Eval] Phase set to aftermath. Waiting for effect to call onSimulationComplete...');
     } catch (error) {
-      console.error("Failed to evaluate simulation:", error);
+      console.error("[Eval] Failed to evaluate simulation:", error);
       alert(config.language === 'french'
         ? "\u00c9chec du traitement des r\u00e9sultats. Veuillez r\u00e9essayer."
         : "Failed to process simulation results. Please try again.");
@@ -913,8 +942,11 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
   // Aftermath: trigger tab switch to AftermathDashboard via proper useEffect (not IIFE in JSX)
   useEffect(() => {
+    console.log('[Aftermath Effect] phase=%s, simulation_id=%s, onSimulationComplete=%s', phase, evaluationResults?.simulation_id, !!onSimulationComplete);
     if (phase === 'aftermath' && evaluationResults?.simulation_id && onSimulationComplete) {
+      console.log('[Aftermath Effect] Conditions met! Calling onSimulationComplete in 1.2s with simId =', evaluationResults.simulation_id);
       const timer = setTimeout(() => {
+        console.log('[Aftermath Effect] Firing onSimulationComplete NOW');
         onSimulationComplete(evaluationResults.simulation_id);
       }, 1200);
       return () => clearTimeout(timer);
@@ -1570,7 +1602,10 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 2 }}
-              onClick={() => setLoadingStep(2)}
+              onClick={() => {
+                console.log('[Loading] Skip intro clicked. Jumping to step 3. initialData =', !!initialData);
+                setLoadingStep(3);
+              }}
               className="absolute bottom-6 right-6 text-[10px] uppercase tracking-widest text-gray-400 hover:text-black border border-gray-300 hover:border-black px-3 py-1.5 transition-colors"
             >
               {t('simulation.skip_intro')}

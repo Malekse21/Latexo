@@ -71,8 +71,10 @@ ${transcriptText}
 
 ## CRITICAL GRADING RULES (MUST FOLLOW):
 - If the student barely spoke, gave only one-word answers, or remained completely silent, you MUST assign a FAILING grade (0-4 out of 20) and set ALL proficiency scores below 10. Do NOT give them the benefit of the doubt.
-- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. Count how much the student spoke vs the jury. If the student's contribution is negligible, the grade MUST reflect that.
-- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20. Only substantive, detailed answers merit 10+/20.
+- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. If the student uses generic buzzwords without deep technical or business justification, severely penalize their score.
+- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20.
+- Mediocre or merely "okay" answers without strong argumentation should be graded strictly around 9-11/20.
+- Only exceptional, highly detailed answers that prove mastery of the subject matter merit a grade of 14+/20. Do NOT hand out high grades easily.
 
 Tasks:
 1. Grade: Assign a final grade out of 20.0 (one decimal place). Be strict and fair.

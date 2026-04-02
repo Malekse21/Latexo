@@ -271,11 +271,12 @@ Generate exactly ${totalTurns} questions split across 3 agents:
 
 Rules:
 1. Mix difficulties: ${difficultyDistribution}
-2. If an AI evaluation note is provided, generate harder questions targeting those weak areas
-3. Each question must be answerable from the project context
-4. Questions must be realistic jury questions — direct, under 2 sentences
-5. CRITICAL: Generate entirely NEW questions. Do NOT ask any question that is semantically similar to the PREVIOUSLY ASKED QUESTIONS listed above
-6. CRITICAL: Interleave the agent IDs so talking turns alternate naturally (e.g. 0,1,2,0,1,2,...). Do NOT group all questions from one agent together
+2. Use very clear, simple vocabulary and phrasing (in French or English). The concept can be hard, but the text itself must be extremely easy to understand. Do not use convoluted, archaic, or overly flowery academic words.
+3. If an AI evaluation note is provided, generate harder questions targeting those weak areas
+4. Each question must be answerable from the project context
+5. Questions must be realistic jury questions — direct, under 2 sentences
+6. CRITICAL: Generate entirely NEW questions. Do NOT ask any question that is semantically similar to the PREVIOUSLY ASKED QUESTIONS listed above
+7. CRITICAL: Interleave the agent IDs so talking turns alternate naturally (e.g. 0,1,2,0,1,2,...). Do NOT group all questions from one agent together
 
 Return ONLY a valid JSON object with a "questions" array:
 {"questions": [{

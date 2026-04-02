@@ -15,7 +15,7 @@ import { CardsView } from "@/components/dashboard/CardsView";
 import { cn } from "@/lib/utils";
 import { BarChart2 } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
 
 type Tab = 'briefing' | 'defense' | 'aftermath' | null;
@@ -48,6 +48,7 @@ function DashboardContent() {
   const [lastGrade, setLastGrade] = useState<number | null>(null);
   const [memorySnapshot, setMemorySnapshot] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const hasLoadedOnce = useRef(false);
   const isFirstRender = useRef(true);
@@ -63,12 +64,14 @@ function DashboardContent() {
     checkSession();
   }, []);
 
-  // Initialize activeTab from search params (on first mount only)
-  const initialTabSet = useRef(false);
+  // Sync activeTab from search params — runs on every URL change (including retry link)
+  const prevTabParam = useRef<string | null>(null);
   useEffect(() => {
-    if (initialTabSet.current) return;
-    initialTabSet.current = true;
     const tabParam = searchParams.get('tab');
+    // Only act when the param actually changed to avoid unnecessary re-renders
+    if (tabParam === prevTabParam.current) return;
+    prevTabParam.current = tabParam;
+    console.log('[Dashboard] searchParams changed, tab =', tabParam);
     if (tabParam === 'defense') setActiveTab('defense');
     else if (tabParam === 'aftermath') setActiveTab('aftermath');
     else setActiveTab(null);
@@ -80,9 +83,9 @@ function DashboardContent() {
     } else {
       setActiveTab(tab);
     }
-    // Update URL without triggering a navigation/re-render
+    // Update URL using Next.js router so searchParams stays in sync
     const url = tab === 'briefing' ? '/dashboard' : `/dashboard?tab=${tab}`;
-    window.history.replaceState(null, '', url);
+    router.replace(url, { scroll: false });
   };
 
   // Single robust fetch effect
@@ -286,8 +289,9 @@ function DashboardContent() {
   };
 
   const handleSimulationComplete = (simId: string) => {
+    console.log('[Dashboard] handleSimulationComplete called with simId =', simId);
     setSimulationId(simId);
-    setActiveTab('aftermath');
+    handleTabChange('aftermath'); // Use handleTabChange to keep URL in sync
   };
 
   // derived state for header

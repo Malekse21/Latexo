@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Lock, LogOut, Check, Loader2, RefreshCw } from "lucide-react";
+import { Lock, LogOut, Check, Loader2, RefreshCw, X } from "lucide-react";
 
 // Types
 interface PendingOrder {
@@ -81,6 +81,7 @@ export default function AdminPortalPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   
   // Tab state
   const [activeTab, setActiveTab] = useState<'orders' | 'metrics'>('orders');
@@ -187,6 +188,34 @@ export default function AdminPortalPage() {
       setError(err.message || "Erreur de connexion.");
     } finally {
       setConfirmingId(null);
+    }
+  };
+
+  const handleDelete = async (orderId: string) => {
+    if (!window.confirm("Es-tu sûr de vouloir rejeter/supprimer cette commande ?")) {
+      return;
+    }
+    setDeletingId(orderId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/payments/delete/${orderId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression.");
+
+      fetchOrders();
+    } catch (err: any) {
+      setError(err.message || "Erreur de connexion.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -469,23 +498,43 @@ export default function AdminPortalPage() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleConfirm(order.id)}
-                      disabled={confirmingId === order.id}
-                      className="w-full bg-black text-white p-4 font-black uppercase flex items-center justify-center gap-2 hover:bg-neutral-800 disabled:opacity-50 transition-colors"
-                    >
-                      {confirmingId === order.id ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Confirming...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-5 h-5" />
-                          Acknowledge Payment
-                        </>
-                      )}
-                    </button>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        onClick={() => handleDelete(order.id)}
+                        disabled={deletingId === order.id || confirmingId === order.id}
+                        className="w-full bg-white text-red-600 border-2 border-red-200 p-4 font-black uppercase flex items-center justify-center gap-2 hover:bg-red-50 hover:border-red-600 disabled:opacity-50 transition-colors"
+                      >
+                        {deletingId === order.id ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <X className="w-5 h-5" />
+                            Reject
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => handleConfirm(order.id)}
+                        disabled={confirmingId === order.id || deletingId === order.id}
+                        className="w-full bg-black text-white p-4 font-black uppercase flex items-center justify-center gap-2 hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+                      >
+                        {confirmingId === order.id ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Confirming...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-5 h-5" />
+                            Acknowledge
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
