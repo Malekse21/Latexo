@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Session, User } from "@supabase/supabase-js";
+import { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
 /** Detect AbortError thrown when React unmounts mid-fetch */
@@ -162,7 +162,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     initializeSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+      async (event: AuthChangeEvent, currentSession: Session | null) => {
         if (!mounted) return;
         
         // Skip events that don't require UI updates — TOKEN_REFRESHED and
