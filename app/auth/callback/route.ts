@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -8,15 +9,36 @@ export async function GET(request: Request) {
   console.log("=== AUTH CALLBACK INITIATED ===", { url: request.url, origin, code: !!code });
 
   if (code) {
-    const supabase = await createClient()
-    const { error, data: sessionData } = await supabase.auth.exchangeCodeForSession(code)
+    const cookieStore = await cookies()
+    
+    // Create a dedicated Supabase client for this route handler
+    // This ensures cookies are read/written correctly during the exchange
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, { ...options })
+            )
+          },
+        },
+      }
+    )
+
+    const { error: exchangeError, data: sessionData } = await supabase.auth.exchangeCodeForSession(code)
     
     console.log("=== EXCHANGE CODE RESULT ===", { 
-      error: error?.message, 
+      error: exchangeError?.message,
+      errorStatus: (exchangeError as any)?.status,
       hasSession: !!sessionData?.session 
     });
 
-    if (!error) {
+    if (!exchangeError) {
       // ── Determine where the user should go ──
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
@@ -42,15 +64,17 @@ export async function GET(request: Request) {
 
       console.log(`=== REDIRECTING TO ${destination} ===`);
 
-      // ── Build the redirect URL ──
-      // By using request.url as the base, we maintain the exact domain the user
-      // was on when they triggered the callback (preview vs prod natively).
-      // This is infinitely safer than reading NEXT_PUBLIC_SITE_URL on previews.
-      return NextResponse.redirect(new URL(destination, request.url))
+      // Use the origin from the request URL to stay on the same domain
+      return NextResponse.redirect(new URL(destination, origin))
     }
+
+    // Exchange failed — include the error detail for debugging
+    console.error("=== EXCHANGE FAILED ===", exchangeError?.message);
+    return NextResponse.redirect(
+      new URL(`/login?error=auth_callback_error&detail=${encodeURIComponent(exchangeError?.message || 'unknown')}`, origin)
+    )
   }
 
-  console.log("=== AUTH CALLBACK FAILED - FALLING BACK TO LOGIN ===");
-  // Auth failed — send to login with error
-  return NextResponse.redirect(new URL(`/login?error=auth_callback_error`, request.url))
+  console.log("=== AUTH CALLBACK FAILED - NO CODE ===");
+  return NextResponse.redirect(new URL('/login?error=auth_callback_error&detail=no_code', request.url))
 }

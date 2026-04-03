@@ -23,8 +23,7 @@ function SignupContent() {
     setIsLoading(true);
     setError(null);
     
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL 
-      ?? (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : window.location.origin);
+    const siteUrl = window.location.origin;
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
