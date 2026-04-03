@@ -198,12 +198,12 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
 
                   {showConfirmation && (
                     <div className="space-y-6 text-center">
-                      <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
-                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                        <h3 className="text-lg font-bold text-red-900 mb-2">Existing Data Warning</h3>
-                        <p className="text-sm text-red-700">
-                          Uploading a new report will permanently delete your existing report, 
-                          all simulation results, and extracted data. This action cannot be undone.
+                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
+                        <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+                        <h3 className="text-lg font-bold text-amber-900 mb-2">Update Existing Report</h3>
+                        <p className="text-sm text-amber-700">
+                          Uploading a new report will update your current file and text extraction. 
+                          <br/><strong>Your existing simulations, streak, and history will be preserved.</strong>
                         </p>
                       </div>
                       <div className="flex gap-3">
@@ -218,9 +218,9 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                         </button>
                         <button
                           onClick={confirmUpload}
-                          className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-bold"
+                          className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-bold"
                         >
-                          Yes, Delete and Upload
+                          Yes, Update Report
                         </button>
                       </div>
                     </div>

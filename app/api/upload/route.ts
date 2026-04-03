@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { deleteUserReports } from '@/lib/supabase/cleanup';
 
 /**
  * Strips boilerplate pages (cover, acknowledgments, TOC, list of figures)
@@ -74,13 +73,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    // Handle One-Report Policy: Clear previous data if confirmed
+    // Handle One-Report Policy Updates: Delete old files from storage, keep DB row
+    let existingReportId = null;
     if (confirmDeletion) {
-      console.log(`Cleaning up existing data for user ${user.id} before new upload...`);
-      const { error: cleanupError } = await deleteUserReports(user.id);
-      if (cleanupError) {
-        console.error('Cleanup failed:', cleanupError);
-        // We continue anyway, but log the error
+      console.log(`Updating existing report files for user ${user.id} before new upload...`);
+      
+      const { data: profile } = await supabase.from('profiles').select('active_report_id').eq('id', user.id).single();
+      
+      if (profile?.active_report_id) {
+        const { data: existingReport } = await supabase
+          .from('reports')
+          .select('id, file_path, thumbnail_url')
+          .eq('id', profile.active_report_id)
+          .single();
+          
+        if (existingReport) {
+          existingReportId = existingReport.id;
+          
+          // Remove old files from storage, DO NOT delete DB row
+          if (existingReport.file_path) {
+             const { error: pdfError } = await supabase.storage.from('pfes').remove([existingReport.file_path]);
+             if (pdfError) console.error("Error deleting old PDF:", pdfError);
+          }
+          if (existingReport.thumbnail_url) {
+             try {
+               const urlParts = existingReport.thumbnail_url.split('/');
+               const fileName = urlParts[urlParts.length - 1];
+               const thumbPath = `${user.id}/${fileName}`;
+               const { error: thumbError } = await supabase.storage.from('thumbnails').remove([thumbPath]);
+               if (thumbError) console.error("Error deleting old thumbnail:", thumbError);
+             } catch(e) {}
+          }
+        }
       }
     }
 
@@ -240,27 +264,47 @@ export async function POST(request: NextRequest) {
       .replace(/_/g, ' ')
       .replace(/-/g, ' ');
 
-    const { data: report, error: dbError } = await supabase
-      .from('reports')
-      .insert({
-        user_id: user.id,
-        title: cleanTitle,
-        name: cleanTitle,
-        file_path: filePath,
-        thumbnail_url: thumbnailUrl,
-        page_count: pageCount,
-        word_count: wordCount,
-        size_bytes: file.size,
-        status: 'completed', 
-        data: {},
-        detected_language: (request as any).detectedLang || 'english',
-        extracted_text: cleanBoilerplate(extractedText).trim()
-      })
-      .select()
-      .single();
+    const reportDataPayload = {
+      user_id: user.id,
+      title: cleanTitle,
+      name: cleanTitle,
+      file_path: filePath,
+      thumbnail_url: thumbnailUrl,
+      page_count: pageCount,
+      word_count: wordCount,
+      size_bytes: file.size,
+      status: 'completed', 
+      data: {},
+      detected_language: (request as any).detectedLang || 'english',
+      extracted_text: cleanBoilerplate(extractedText).trim()
+    };
+
+    let report;
+    let dbError;
+
+    if (existingReportId) {
+      // Update existing report to preserve simulations
+      const res = await supabase
+        .from('reports')
+        .update(reportDataPayload)
+        .eq('id', existingReportId)
+        .select()
+        .single();
+      report = res.data;
+      dbError = res.error;
+    } else {
+      // Insert new report
+      const res = await supabase
+        .from('reports')
+        .insert(reportDataPayload)
+        .select()
+        .single();
+      report = res.data;
+      dbError = res.error;
+    }
 
     if (dbError) {
-      throw new Error(`Database Insert failed: ${dbError.message}`);
+      throw new Error(`Database Insert/Update failed: ${dbError.message}`);
     }
 
     // 6. Update Profile's active_report_id
