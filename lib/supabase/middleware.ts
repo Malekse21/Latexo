@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
+  console.log(`[Middleware] -> Incoming Request: ${request.nextUrl.pathname}`);
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -37,6 +38,7 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  console.log(`[Middleware] Auth check complete. User exists: ${!!user}`);
 
   // Protected routes logic
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
@@ -66,6 +68,7 @@ export async function updateSession(request: NextRequest) {
 
   // If user is not logged in and tries to access protected routes
   if (!user && (isDashboardRoute || isOnboardingRoute)) {
+    console.log(`[Middleware] blocked unauthenticated request to ${request.nextUrl.pathname}. Redirecting to /login`);
     return createRedirect('/login')
   }
 
@@ -79,6 +82,7 @@ export async function updateSession(request: NextRequest) {
       .single()
       
     const isProfileComplete = profile && profile.university
+    console.log(`[Middleware] User is authenticated. Profile complete: ${!!isProfileComplete}`);
 
     // 1. If hitting login/signup OR root, redirect to appropriate start page
     if (isAuthRoute || isRootRoute) {
@@ -98,10 +102,13 @@ export async function updateSession(request: NextRequest) {
     // 3. If hitting onboarding but profile ALREADY complete, force dashboard
     if (isOnboardingRoute) {
       if (isProfileComplete) {
+        console.log(`[Middleware] User is already onboarded. Redirecting to /dashboard`);
         return createRedirect('/dashboard')
       }
     }
   }
+
+  console.log(`[Middleware] Allowed request to proceed: ${request.nextUrl.pathname}`);
 
   return supabaseResponse
 }
