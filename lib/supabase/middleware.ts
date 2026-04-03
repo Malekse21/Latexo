@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
+  console.log(`\n[Middleware] === START: ${request.nextUrl.pathname} ===`)
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -34,9 +35,11 @@ export async function updateSession(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
+  console.log('[Middleware] Fetching user session via supabase.auth.getUser()...')
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  console.log(`[Middleware] Auth User Result: ${user ? `User Found (ID: ${user.id})` : 'No User'}`)
 
   // Protected routes logic
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
@@ -52,6 +55,7 @@ export async function updateSession(request: NextRequest) {
 
   // Helper to create a redirect response that preserves cookies
   const createRedirect = (path: string) => {
+    console.log(`[Middleware] Issuing redirect to: ${path}`)
     const url = request.nextUrl.clone()
     url.pathname = path
     const response = NextResponse.redirect(url)
@@ -66,6 +70,7 @@ export async function updateSession(request: NextRequest) {
 
   // If user is not logged in and tries to access protected routes
   if (!user && (isDashboardRoute || isOnboardingRoute)) {
+    console.log(`[Middleware] Unauthenticated access blocked. Redirecting to /login`)
     return createRedirect('/login')
   }
 
@@ -83,14 +88,17 @@ export async function updateSession(request: NextRequest) {
     // 1. If hitting login/signup OR root, redirect to appropriate start page
     if (isAuthRoute || isRootRoute) {
       if (isAuthRoute && request.nextUrl.pathname.startsWith('/auth/callback')) {
+        console.log(`[Middleware] Allowing /auth/callback to proceed`)
         return supabaseResponse // Allow callback to proceed
       }
+      console.log(`[Middleware] Auth/Root route redirect -> isProfileComplete: ${isProfileComplete ? 'true' : 'false'}`)
       return createRedirect(isProfileComplete ? '/dashboard' : '/onboarding')
     }
 
     // 2. If hitting dashboard but profile incomplete, force onboarding
     if (isDashboardRoute) {
       if (!isProfileComplete) {
+        console.log(`[Middleware] Dashboard route accessed but profile incomplete. Redirecting to /onboarding`)
         return createRedirect('/onboarding')
       }
     }
@@ -98,10 +106,12 @@ export async function updateSession(request: NextRequest) {
     // 3. If hitting onboarding but profile ALREADY complete, force dashboard
     if (isOnboardingRoute) {
       if (isProfileComplete) {
+        console.log(`[Middleware] Onboarding bypassed (already complete). Redirecting to /dashboard`)
         return createRedirect('/dashboard')
       }
     }
   }
 
+  console.log(`[Middleware] === END: Allowed path ${request.nextUrl.pathname} ===\n`)
   return supabaseResponse
 }
