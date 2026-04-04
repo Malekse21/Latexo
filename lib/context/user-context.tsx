@@ -127,56 +127,72 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let hasReceivedSession = false;
     console.log("[UserContext] Provider Mounted. Starting auth listener.");
+
+    const handleSession = async (currentSession: Session | null) => {
+      if (!mounted) return;
+      hasReceivedSession = true;
+
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+
+      if (currentSession?.user) {
+        try {
+          console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
+          const data = await fetchProfile(currentSession.user.id);
+          console.log(`[UserContext] fetchProfile Result:`, data);
+          if (mounted) {
+            if (data) {
+              setProfile(data);
+              console.log("[UserContext] Profile state set.");
+            } else {
+              console.warn("[UserContext] No data returned from fetchProfile.");
+            }
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error("[UserContext] Profile fetch error:", err);
+          if (mounted) setLoading(false);
+        }
+      } else {
+        console.log("[UserContext] No user in session. Clearing profile.");
+        setProfile(null);
+        if (mounted) setLoading(false);
+      }
+    };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, currentSession: Session | null) => {
         if (!mounted) return;
-        
-        console.log(`[UserContext] Raw Auth Event: ${event}`, { 
-          hasSession: !!currentSession, 
-          userId: currentSession?.user?.id 
-        });
-        
-        // Skip purely token refresh events if they don't change user state
-        if (event === 'TOKEN_REFRESHED') {
-          return;
-        }
-        
-        console.log(`[UserContext] Processing event: ${event}`);
-        
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        
-        if (currentSession?.user) {
-          try {
-            console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
-            const data = await fetchProfile(currentSession.user.id);
-            console.log(`[UserContext] fetchProfile Result:`, data);
-            if (mounted) {
-              if (data) {
-                setProfile(data);
-                console.log("[UserContext] Profile state set to data.");
-              } else {
-                console.warn("[UserContext] No data returned from fetchProfile.");
-              }
-              setLoading(false);
-            }
-          } catch (err) {
-            console.error("[UserContext] Profile fetch error caught in main try/catch:", err);
-            if (mounted) setLoading(false);
-          }
-        } else {
-          console.log("[UserContext] No user in session. Setting profile to null.");
-          setProfile(null);
-          if (mounted) setLoading(false);
-        }
+        console.log(`[UserContext] Auth Event: ${event}`, { hasSession: !!currentSession });
+        if (event === 'TOKEN_REFRESHED') return;
+        await handleSession(currentSession);
       }
     );
+
+    // Safety net: if onAuthStateChange hasn't delivered a session after 1.5s,
+    // manually check. This handles the case where the Supabase singleton's
+    // internal state is stale (e.g. after logout→re-login without full reload).
+    const fallbackTimer = setTimeout(async () => {
+      if (!mounted || hasReceivedSession) return;
+      console.log("[UserContext] Fallback: No auth event received. Manually checking session...");
+      try {
+        const { data: { session: manualSession } } = await supabase.auth.getSession();
+        console.log("[UserContext] Fallback getSession result:", { hasSession: !!manualSession });
+        if (!hasReceivedSession && mounted) {
+          await handleSession(manualSession);
+        }
+      } catch (err) {
+        console.error("[UserContext] Fallback getSession error:", err);
+        if (mounted) setLoading(false);
+      }
+    }, 1500);
 
     return () => {
       console.log("[UserContext] Provider Unmounting.");
       mounted = false;
+      clearTimeout(fallbackTimer);
       subscription.unsubscribe();
     };
   }, []);
@@ -184,7 +200,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const signOut = React.useCallback(async () => {
     console.log("[UserContext] signOut started");
     try {
-      console.log("[UserContext] Calling supabase.auth.signOut()...");
       await supabase.auth.signOut();
       console.log("[UserContext] supabase.auth.signOut() SUCCESS");
     } catch (err) {
@@ -195,15 +210,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setProfile(null);
     
+    // Only clear our app's storage key — NOT localStorage.clear()
+    // which destroys Supabase's internal auth state in the singleton client
     try {
-      localStorage.clear();
-      sessionStorage.clear();
-      console.log("[UserContext] Local storage cleared");
+      localStorage.removeItem('latexo-app-storage');
+      console.log("[UserContext] App storage cleared");
     } catch (e) {
-      console.error("[UserContext] Local storage clear error:", e);
+      // silent
     }
 
-    console.log("[UserContext] Pushing to '/'");
+    console.log("[UserContext] Redirecting to '/'");
     router.push("/");
     router.refresh();
   }, [router, supabase]);
