@@ -60,7 +60,7 @@ export default function FeaturesGridSection() {
                 <Mic className="w-5 h-5" />
               </div>
               <h3 className="text-xl font-black uppercase tracking-tight mb-2">
-                AI Defense Simulation
+                AI Soutenance Simulation
               </h3>
               <p className="text-sm text-neutral-500 font-medium leading-relaxed">
                 Face three AI jury personas in a real-time voice-to-voice simulation. They&apos;ve read your report — and they&apos;re not going easy.
@@ -127,9 +127,9 @@ export default function FeaturesGridSection() {
             {/* Mini Visual: Fake leaderboard rows */}
             <div className="mt-5 space-y-0 border border-neutral-200 bg-neutral-50 divide-y divide-neutral-200">
               {[
-                { rank: "🥇", name: "Amine B.", score: "18.5", highlight: false },
-                { rank: "🥈", name: "Sara M.", score: "17.2", highlight: false },
-                { rank: "🥉", name: "You", score: "16.8", highlight: true },
+                { rank: "🥇", name: "You", score: "18.5", highlight: false },
+                { rank: "🥈", name: "Sandra A.", score: "17.2", highlight: false },
+                { rank: "🥉", name: "Amine B.", score: "16.8", highlight: true },
               ].map((entry, i) => (
                 <div
                   key={i}

@@ -10,6 +10,26 @@ export default function PricingSection() {
         <div className="text-center mb-16 space-y-4">
           <h2 className="text-4xl font-black uppercase tracking-tighter">Choose Your Arsenal</h2>
           <p className="text-lg text-neutral-600 font-medium">Simple credit packs. No subscriptions. Pay as you go.</p>
+          
+          <div className="max-w-4xl mx-auto pt-8">
+            <div className="flex flex-col md:flex-row items-stretch justify-center border-[3px] border-black bg-white shadow-[8px_8px_0px_#000000]">
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 border-b-[3px] md:border-b-0 md:border-r-[3px] border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">10 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">5 MIN SIMULATION</span>
+              </div>
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 border-b-[3px] md:border-b-0 md:border-r-[3px] border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">20 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">15 MIN SIMULATION</span>
+              </div>
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">30 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">30 MIN SIMULATION</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-center">

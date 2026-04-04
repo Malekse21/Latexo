@@ -39,7 +39,7 @@ export default function Home() {
                 <span className="text-xl font-black tracking-tight uppercase">Latexo</span>
               </div>
               <p className="text-sm text-neutral-400 leading-relaxed max-w-xs">
-                The first AI-powered defense simulation platform built for Tunisian university students.
+                The first AI-powered soutenance simulation platform built for Tunisian university students.
               </p>
             </div>
 

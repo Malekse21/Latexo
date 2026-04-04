@@ -139,6 +139,26 @@ export function PackSelection({ currentCredits, onClose }: PackSelectionProps) {
           Simple credit packs. No subscriptions. Pay as you go.
         </p>
 
+        <div className="w-full mb-8">
+          <div className="flex flex-col md:flex-row items-stretch justify-center border-2 border-black bg-white shadow-[4px_4px_0px_#000000]">
+            <div className="flex-1 flex items-center justify-center gap-2 px-3 py-3 border-b-2 md:border-b-0 md:border-r-2 border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+              <span className="text-[11px] md:text-[12px] font-black uppercase tracking-tighter">10 CREDITS</span>
+              <span className="text-neutral-400 font-mono font-bold">→</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider text-neutral-600">5 MIN SIMULATION</span>
+            </div>
+            <div className="flex-1 flex items-center justify-center gap-2 px-3 py-3 border-b-2 md:border-b-0 md:border-r-2 border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+              <span className="text-[11px] md:text-[12px] font-black uppercase tracking-tighter">20 CREDITS</span>
+              <span className="text-neutral-400 font-mono font-bold">→</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider text-neutral-600">15 MIN SIMULATION</span>
+            </div>
+            <div className="flex-1 flex items-center justify-center gap-2 px-3 py-3 bg-neutral-50 hover:bg-neutral-100 transition-colors">
+              <span className="text-[11px] md:text-[12px] font-black uppercase tracking-tighter">30 CREDITS</span>
+              <span className="text-neutral-400 font-mono font-bold">→</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider text-neutral-600">30 MIN SIMULATION</span>
+            </div>
+          </div>
+        </div>
+
         {/* MOST POPULAR badge */}
         <div className="flex justify-center mb-4">
           <span className="text-[10px] uppercase tracking-[0.15em] font-black px-3 py-1 border-2 border-black text-black bg-white font-mono">

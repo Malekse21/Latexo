@@ -81,7 +81,7 @@ function LoginContent() {
               Your jury is<br />waiting.
             </h2>
             <p className="text-zinc-400 text-lg font-light leading-relaxed max-w-sm">
-              AI-powered PFE defense simulation. Practice until you&apos;re unshakeable.
+              AI-powered PFE soutenance simulation. Practice until you&apos;re unshakeable.
             </p>
           </div>
 

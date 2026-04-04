@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
                 color: "#666",
               }}
             >
-              DEFENSE RECEIPT
+              SOUTENANCE RECEIPT
             </div>
             <div style={{ width: "100%", height: "3px", backgroundColor: "#000", marginTop: "8px" }} />
           </div>

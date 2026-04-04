@@ -17,7 +17,6 @@ export interface PackInfo {
   name: string;
   credits: number;
   price: number;
-  hint: string;
 }
 
 export const PACKS: Record<PackType, PackInfo> = {
@@ -26,21 +25,18 @@ export const PACKS: Record<PackType, PackInfo> = {
     name: 'STARTER',
     credits: 30,
     price: 9,
-    hint: '2× sessions 15 min',
   },
   defense: {
     id: 'defense',
     name: 'DEFENSE',
     credits: 80,
     price: 19,
-    hint: '1× 30min + 2× 15min',
   },
   serious: {
     id: 'serious',
     name: 'SERIOUS',
     credits: 200,
     price: 39,
-    hint: '6× 30min + sessions bonus',
   },
 };
 

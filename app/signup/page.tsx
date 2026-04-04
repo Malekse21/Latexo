@@ -118,7 +118,7 @@ function SignupContent() {
           className="relative z-10 space-y-3"
         >
           {[
-            "Voice-to-voice AI defense simulation",
+            "Voice-to-voice AI soutenance simulation",
             "Personalized feedback from 3 jury personas",
             "Track your progress with streaks & leaderboard",
           ].map((feature, i) => (
@@ -152,7 +152,7 @@ function SignupContent() {
           <div className="space-y-3">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight uppercase">Create Account</h1>
             <p className="text-zinc-500 text-sm sm:text-base">
-              Join Latexo and start mastering your PFE defense.
+              Join Latexo and start mastering your PFE soutenance.
             </p>
           </div>
 
@@ -193,7 +193,6 @@ function SignupContent() {
             {/* Divider */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-zinc-200" />
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Free to start</span>
               <div className="flex-1 h-px bg-zinc-200" />
             </div>
           </div>

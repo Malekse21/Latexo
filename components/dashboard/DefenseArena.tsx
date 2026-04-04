@@ -868,7 +868,7 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
     setTimeout(() => {
       const closingText = config.language === 'french'
         ? "Le temps est écoulé. Merci pour votre présentation, le jury va maintenant délibérer."
-        : "Time is up. Thank you for your defense, the jury will now deliberate.";
+        : "Time is up. Thank you for your presentation, the jury will now deliberate.";
       const closingSpeaker = "academic";
 
       // Display and speak the closing remark
