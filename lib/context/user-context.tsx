@@ -128,46 +128,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    const initializeSession = async () => {
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        console.log("[UserContext] initializeSession on mount:", { user, session, userError, sessionError });
-        
-        if (!mounted) return;
-        
-        setSession(session);
-        setUser(user ?? null);
-        
-        if (user) {
-          const data = await fetchProfile(user.id);
-          if (mounted) {
-            if (data) setProfile(data);
-            setLoading(false);
-          }
-        } else {
-          if (mounted) {
-            setLoading(false);
-          }
-        }
-      } catch (err) {
-        // AbortError fires when React unmounts during navigation — harmless
-        if (isAbortError(err)) return;
-        console.error("[UserContext] initializeSession error:", err);
-        if (mounted) setLoading(false);
-      }
-    };
-
-    initializeSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, currentSession: Session | null) => {
         if (!mounted) return;
         
-        // Skip events that don't require UI updates — TOKEN_REFRESHED and
-        // INITIAL_SESSION fire when the tab regains focus or on hydration.
-        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        // Skip purely token refresh events if they don't change user state
+        if (event === 'TOKEN_REFRESHED') {
           return;
         }
         
@@ -177,21 +143,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUser(currentSession?.user ?? null);
         
         if (currentSession?.user) {
-          if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-            try {
-              const data = await fetchProfile(currentSession.user.id);
-              if (mounted) {
-                if (data) setProfile(data);
-                setLoading(false);
-              }
-            } catch (err) {
-              if (!isAbortError(err)) {
-                console.error("[UserContext] Profile fetch in auth callback:", err);
-              }
-              if (mounted) setLoading(false);
+          try {
+            const data = await fetchProfile(currentSession.user.id);
+            if (mounted) {
+              if (data) setProfile(data);
+              setLoading(false);
             }
+          } catch (err) {
+            if (!isAbortError(err)) {
+              console.error("[UserContext] Profile fetch error:", err);
+            }
+            if (mounted) setLoading(false);
           }
-        } else if (event === 'SIGNED_OUT') {
+        } else {
           setProfile(null);
           if (mounted) setLoading(false);
         }
