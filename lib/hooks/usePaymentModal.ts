@@ -17,6 +17,7 @@ export interface PackInfo {
   name: string;
   credits: number;
   price: number;
+  hint: string;
 }
 
 export const PACKS: Record<PackType, PackInfo> = {
@@ -25,18 +26,21 @@ export const PACKS: Record<PackType, PackInfo> = {
     name: 'STARTER',
     credits: 30,
     price: 9,
+    hint: "L'essentiel pour démarrer",
   },
   defense: {
     id: 'defense',
     name: 'DEFENSE',
     credits: 80,
     price: 19,
+    hint: "Pack le plus populaire",
   },
   serious: {
     id: 'serious',
     name: 'SERIOUS',
     credits: 200,
     price: 39,
+    hint: "Pour une prépa totale",
   },
 };
 
