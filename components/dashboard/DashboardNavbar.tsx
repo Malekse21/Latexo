@@ -16,6 +16,11 @@ export function DashboardNavbar() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const { profile, user, loading, signOut, language, setLanguage, t } = useUser();
   const avatarUrl = profile?.avatar_url;
+  
+  // Debug Log
+  useEffect(() => {
+    console.log("[DashboardNavbar] Render state:", { loading, hasUser: !!user, profile });
+  }, [loading, user, profile]);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const { open: openPaymentModal } = usePaymentModal();
 
@@ -52,8 +57,10 @@ export function DashboardNavbar() {
   }, [profile?.credits]);
 
   const handleLogout = async () => {
+    console.log("[DashboardNavbar] handleLogout triggered");
     setIsProfileOpen(false);
     await signOut();
+    console.log("[DashboardNavbar] handleLogout finished");
   };
 
   return (

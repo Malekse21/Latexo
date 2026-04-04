@@ -127,10 +127,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    console.log("[UserContext] Provider Mounted. Starting auth listener.");
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, currentSession: Session | null) => {
         if (!mounted) return;
+        
+        console.log(`[UserContext] Raw Auth Event: ${event}`, { 
+          hasSession: !!currentSession, 
+          userId: currentSession?.user?.id 
+        });
         
         // Skip purely token refresh events if they don't change user state
         if (event === 'TOKEN_REFRESHED') {
@@ -144,18 +150,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         
         if (currentSession?.user) {
           try {
+            console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
             const data = await fetchProfile(currentSession.user.id);
+            console.log(`[UserContext] fetchProfile Result:`, data);
             if (mounted) {
-              if (data) setProfile(data);
+              if (data) {
+                setProfile(data);
+                console.log("[UserContext] Profile state set to data.");
+              } else {
+                console.warn("[UserContext] No data returned from fetchProfile.");
+              }
               setLoading(false);
             }
           } catch (err) {
-            if (!isAbortError(err)) {
-              console.error("[UserContext] Profile fetch error:", err);
-            }
+            console.error("[UserContext] Profile fetch error caught in main try/catch:", err);
             if (mounted) setLoading(false);
           }
         } else {
+          console.log("[UserContext] No user in session. Setting profile to null.");
           setProfile(null);
           if (mounted) setLoading(false);
         }
@@ -163,16 +175,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => {
+      console.log("[UserContext] Provider Unmounting.");
       mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const signOut = React.useCallback(async () => {
+    console.log("[UserContext] signOut started");
     try {
+      console.log("[UserContext] Calling supabase.auth.signOut()...");
       await supabase.auth.signOut();
+      console.log("[UserContext] supabase.auth.signOut() SUCCESS");
     } catch (err) {
-      console.error("Supabase signOut error:", err);
+      console.error("[UserContext] Supabase signOut error:", err);
     }
     
     setUser(null);
@@ -182,10 +198,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.clear();
       sessionStorage.clear();
+      console.log("[UserContext] Local storage cleared");
     } catch (e) {
-      // silent
+      console.error("[UserContext] Local storage clear error:", e);
     }
 
+    console.log("[UserContext] Pushing to '/'");
     router.push("/");
     router.refresh();
   }, [router, supabase]);
