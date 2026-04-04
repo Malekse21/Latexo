@@ -205,22 +205,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = React.useCallback(async () => {
-    // 1. Optimistic UI updates for immediate feedback
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Supabase signOut error:", err);
+    }
+    
     setUser(null);
     setSession(null);
     setProfile(null);
     
-    // 2. Instant client-side navigation to landing page
-    router.push("/");
-    
-    // 3. Perform the actual logout in the background
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error("Supabase signOut error (background):", err);
-    }
-    
-    // 4. Ensure all stale storage is nuked
     try {
       localStorage.clear();
       sessionStorage.clear();
@@ -228,7 +222,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       // silent
     }
 
-    // 5. Refresh the router to update any Server Components mapped to the auth state
+    router.push("/");
     router.refresh();
   }, [router, supabase]);
 
