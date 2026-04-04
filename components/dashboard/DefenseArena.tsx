@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import NextImage from "next/image";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/lib/context/user-context";
 import { createClient } from "@/lib/supabase/client";
@@ -113,13 +114,14 @@ const VOICE_PROFILES: Record<string, { pitch: number; rate: number }> = {
   business: { pitch: 1.0, rate: 1.05 },    // Amir — mid-range, energetic
 };
 
-interface DefenseArenaProps {
-  onSimulationComplete?: (simulationId: string) => void;
+export interface DefenseArenaProps {
   reportId?: string;
   initialLanguage?: Language;
 }
 
-export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }: DefenseArenaProps = {}) {
+export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = {}) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { profile, refreshProfile, language, t } = useUser();
   const [phase, setPhase] = useState<SimulationPhase>("config");
   const [config, setConfig] = useState<SimulationConfig>({
@@ -688,8 +690,6 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
       const sessionData = await sessionRes.json();
       console.log("✅ [Init] Live session created:", sessionData.sessionId, 'firstQuestion:', sessionData.firstQuestion?.substring(0, 40));
 
-      await refreshProfile();
-      console.log('[Init] Profile refreshed. Setting initialData now.');
       // Merge session data (firstQuestion, agentId) into initialData so the transition effect can use it
       setInitialData({
         ...data,
@@ -697,6 +697,12 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
         sessionAgentId: sessionData.agentId,
       });
       console.log('[Init] initialData SET. Waiting for loadingStep to reach 3+...');
+
+      refreshProfile().then(() => {
+        console.log('[Init] Profile refreshed.');
+      }).catch((err) => {
+        console.error('[Init] Failed to refresh profile:', err);
+      });
     } catch (error) {
       console.error("[Init] Failed to initialize simulation:", error);
       alert("Failed to start simulation. Please try again.");
@@ -942,16 +948,16 @@ export function DefenseArena({ onSimulationComplete, reportId, initialLanguage }
 
   // Aftermath: trigger tab switch to AftermathDashboard via proper useEffect (not IIFE in JSX)
   useEffect(() => {
-    console.log('[Aftermath Effect] phase=%s, simulation_id=%s, onSimulationComplete=%s', phase, evaluationResults?.simulation_id, !!onSimulationComplete);
-    if (phase === 'aftermath' && evaluationResults?.simulation_id && onSimulationComplete) {
-      console.log('[Aftermath Effect] Conditions met! Calling onSimulationComplete in 1.2s with simId =', evaluationResults.simulation_id);
+    console.log('[Aftermath Effect] phase=%s, simulation_id=%s', phase, evaluationResults?.simulation_id);
+    if (phase === 'aftermath' && evaluationResults?.simulation_id) {
+      console.log('[Aftermath Effect] Conditions met! Calling router in 1.2s with simId =', evaluationResults.simulation_id);
       const timer = setTimeout(() => {
-        console.log('[Aftermath Effect] Firing onSimulationComplete NOW');
-        onSimulationComplete(evaluationResults.simulation_id);
+        console.log('[Aftermath Effect] Firing router.push NOW');
+        router.push(`${pathname}?tab=aftermath&simId=${evaluationResults.simulation_id}`);
       }, 1200);
       return () => clearTimeout(timer);
     }
-  }, [phase, evaluationResults]);
+  }, [phase, evaluationResults, pathname, router]);
 
   // Manual end session button — shows confirmation modal first
   const handleEndSession = () => {

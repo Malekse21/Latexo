@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { motion, useSpring, useTransform } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/context/user-context";
 import NextImage from "next/image";
 import { useRouter } from "next/navigation";
-import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase, Download, Loader2 } from "lucide-react";
+import { ArrowRight, RefreshCw, Code2, GraduationCap, Briefcase, Download, Loader2, ArrowLeft } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────
 interface SimulationData {
@@ -33,8 +33,9 @@ interface SimulationData {
   created_at: string;
 }
 
-interface AftermathDashboardProps {
-  simulationId: string;
+export interface AftermathDashboardProps {
+  simulationData?: any | null;
+  lastScoreData?: number | null;
 }
 
 // ─── Jury Data ────────────────────────────────────────────────
@@ -66,57 +67,15 @@ const JURY_MEMBERS = [
 ];
 
 // ─── Component ────────────────────────────────────────────────
-export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
-  const { profile, user } = useUser();
+export function AftermathDashboard({ simulationData, lastScoreData }: AftermathDashboardProps) {
+  const { profile, t } = useUser();
   const router = useRouter();
   const avatarUrl = profile?.avatar_url;
-  const [simulation, setSimulation] = useState<SimulationData | null>(null);
-  const [lastScore, setLastScore] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // Directly use the server-provided data
+  const simulation = simulationData || null;
+  const lastScore = lastScoreData ?? null;
   const [isDownloading, setIsDownloading] = useState(false);
-
-  useEffect(() => {
-    async function fetchData() {
-      console.log('[AftermathDashboard] fetchData called with simulationId =', simulationId);
-      const supabase = createClient();
-
-      // Fetch current simulation
-      const { data, error } = await supabase
-        .from("simulations")
-        .select("*")
-        .eq("id", simulationId)
-        .single();
-
-      if (error) {
-        console.error("[AftermathDashboard] Failed to fetch simulation:", error);
-        setLoading(false);
-        return;
-      }
-
-      console.log('[AftermathDashboard] Simulation fetched successfully. grade =', data?.final_grade, 'status =', data?.status);
-      setSimulation(data);
-
-      // Fetch previous simulation for "last score"
-      if (data) {
-        const { data: prevSims } = await supabase
-          .from("simulations")
-          .select("final_grade")
-          .eq("user_id", data.user_id || profile?.id)
-          .lt("created_at", data.created_at)
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (prevSims && prevSims.length > 0) {
-          setLastScore(prevSims[0].final_grade);
-        }
-      }
-
-      setLoading(false);
-      console.log('[AftermathDashboard] Loading complete, rendering results.');
-    }
-
-    fetchData();
-  }, [simulationId, profile?.id]);
 
   // ─── Animated Score Counter ───────────────────────────────
   const animatedScore = useSpring(0, { duration: 2400, bounce: 0 });
@@ -132,12 +91,13 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
     }
   }, [simulation?.final_grade, animatedScore]);
 
-  // ─── Handlers ───────────────────────────────────────────────
   const handleDownloadReceipt = async () => {
-    if (!simulationId) return;
+    const targetSimId = simulation?.id;
+    if (!targetSimId) return;
+    
     try {
       setIsDownloading(true);
-      const url = `/api/flex-receipt?simulation_id=${simulationId}`;
+      const url = `/api/flex-receipt?simulation_id=${targetSimId}`;
       const response = await fetch(url);
       
       if (!response.ok) throw new Error("Failed to generate receipt");
@@ -158,23 +118,36 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
     }
   };
 
-  // ─── Loading / Error States ───────────────────────────────
-  if (loading) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="text-xl font-mono uppercase tracking-widest animate-pulse">
-          Loading Results...
-        </div>
-      </div>
-    );
-  }
+  const handleBackToDashboard = () => {
+    router.push('/dashboard?tab=briefing');
+  };
+
+  const handleNewSession = () => {
+    router.push('/dashboard?tab=defense');
+  };
+
+  // Loading is now handled by the server component (DashboardPage) before rendering.
+  // We don't render a local loading state anymore.
 
   if (!simulation) {
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="text-xl font-mono uppercase tracking-widest">
-          Simulation Not Found
+      <div className="w-full h-[calc(100vh-140px)] flex flex-col items-center justify-center text-center p-6">
+        <div className="w-16 h-16 bg-zinc-50 border border-zinc-200 rounded-full flex items-center justify-center mb-6">
+          <Briefcase className="w-8 h-8 text-zinc-400" />
         </div>
+        <h2 className="text-xl font-bold tracking-tight mb-2 font-serif text-black uppercase">
+          {t('dashboard.need_simulate') || "No Simulation Results Yet"}
+        </h2>
+        <p className="text-zinc-500 text-sm mb-8 font-mono max-w-sm">
+          You haven't completed any defense simulations yet. Try running a simulation first to generate your grades, feedback, and flex receipt!
+        </p>
+        <button
+          onClick={handleNewSession}
+          className="bg-black text-white text-xs font-bold font-mono tracking-widest uppercase hover:bg-zinc-800 transition-colors h-11 px-8 rounded-none flex items-center justify-center gap-2"
+        >
+          START SIMULATION
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     );
   }
@@ -389,8 +362,8 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
                       alt={member.name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                        e.currentTarget.parentElement!.innerHTML = `<span class="text-lg font-bold">${member.name[0]}</span>`;
+                         e.currentTarget.style.display = "none";
+                         e.currentTarget.parentElement!.innerHTML = `<span class="text-lg font-bold">${member.name[0]}</span>`;
                       }}
                     />
                   </div>
@@ -448,19 +421,28 @@ export function AftermathDashboard({ simulationId }: AftermathDashboardProps) {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="border border-gray-200 rounded-xl p-4 bg-gray-900 flex items-center justify-between gap-4"
+          className="border border-gray-200 rounded-xl p-4 bg-gray-900 flex flex-col md:flex-row items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3">
             <RefreshCw className="w-4 h-4 text-gray-400" />
             <span className="text-sm text-gray-300">Ready for another round?</span>
           </div>
-          <button
-              onClick={() => router.push('/dashboard?tab=defense')}
-              className="group inline-flex items-center gap-1.5 bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-100 hover:scale-[1.02] active:scale-95"
+          <div className="flex gap-2 w-full md:w-auto">
+            <button
+              onClick={handleBackToDashboard}
+              className="flex-1 md:flex-none inline-flex justify-center items-center gap-1.5 bg-transparent border border-gray-700 text-gray-300 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-800 hover:text-white"
             >
-              Retry
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              <ArrowLeft className="w-3 h-3" />
+              Dashboard
             </button>
+            <button
+               onClick={handleNewSession}
+               className="flex-1 md:flex-none group inline-flex justify-center items-center gap-1.5 bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-xs transition-all hover:bg-gray-100 hover:scale-[1.02] active:scale-95"
+             >
+               Retry
+               <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+             </button>
+          </div>
         </motion.div>
       </div>
     </div>
