@@ -1,137 +1,77 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/context/user-context";
 import { Trophy, Medal, Crown, User as UserIcon, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { LeaderboardEntry } from "@/app/dashboard/leaderboard/page";
 
 type SubTab = "global" | "university" | "specialty";
 
-interface LeaderboardEntry {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  university: string | null;
-  specialty: string | null;
-  best_score: number;
-  total_sessions: number;
-  total_time_minutes: number;
-  rating: number;
-  rank: number;
+interface LeaderboardViewProps {
+  initialProfiles: LeaderboardEntry[];
+  currentUserId: string | null;
+  initialIsPublic: boolean;
+  currentUserProfile: LeaderboardEntry | null;
 }
 
-function computeRating(best: number, sessions: number, totalTime: number): number {
-  const masteryPart = best * 0.8;
-  const consistencyPart = 2 * (sessions / (sessions + 10));
-  const staminaPart = 2 * (totalTime / (totalTime + 120));
-  return masteryPart + consistencyPart + staminaPart;
-}
-
-export function LeaderboardView() {
-  const { profile, user, t } = useUser();
+export function LeaderboardView({
+  initialProfiles,
+  currentUserId,
+  initialIsPublic,
+  currentUserProfile
+}: LeaderboardViewProps) {
+  const { profile, t } = useUser();
+  const router = useRouter();
+  
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("global");
-  const [allProfiles, setAllProfiles] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isPublic, setIsPublic] = useState(true);
   const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
-  const [myProfileData, setMyProfileData] = useState<LeaderboardEntry | null>(null);
-
-  const fetchProfiles = useCallback(async () => {
-    setLoading(true);
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url, university, specialty, best_score, total_sessions, total_time_minutes, is_public");
-
-      if (error) throw error;
-
-      // Find current user's privacy setting
-      if (user?.id) {
-        const myProfile = (data || []).find((p: any) => p.id === user.id);
-        if (myProfile) {
-          setIsPublic(myProfile.is_public !== false);
-          // Store full profile data for pinned row even if hidden
-          setMyProfileData({
-            ...myProfile,
-            best_score: myProfile.best_score || 0,
-            total_sessions: myProfile.total_sessions || 0,
-            total_time_minutes: myProfile.total_time_minutes || 0,
-            rating: computeRating(myProfile.best_score || 0, myProfile.total_sessions || 0, myProfile.total_time_minutes || 0),
-            rank: 0,
-          });
-        }
-      }
-
-      const entries: LeaderboardEntry[] = (data || [])
-        .filter((p: any) => p.is_public !== false && ((p.best_score || 0) > 0 || (p.total_sessions || 0) > 0))
-        .map((p: any) => ({
-          ...p,
-          best_score: p.best_score || 0,
-          total_sessions: p.total_sessions || 0,
-          total_time_minutes: p.total_time_minutes || 0,
-          rating: computeRating(p.best_score || 0, p.total_sessions || 0, p.total_time_minutes || 0),
-          rank: 0,
-        }))
-        .sort((a: LeaderboardEntry, b: LeaderboardEntry) => b.rating - a.rating);
-
-      // Assign ranks
-      entries.forEach((entry, i) => {
-        entry.rank = i + 1;
-      });
-
-      setAllProfiles(entries);
-    } catch (err) {
-      console.error("Leaderboard fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  // Fetch all profiles once
-  useEffect(() => {
-    fetchProfiles();
-  }, [fetchProfiles]);
+  const [isPublic, setIsPublic] = useState(initialIsPublic);
 
   // Toggle privacy
   const togglePrivacy = async () => {
-    if (!user?.id) return;
+    if (!currentUserId) return;
     setIsUpdatingPrivacy(true);
     const newValue = !isPublic;
+
+    // Optimistic update
+    setIsPublic(newValue);
 
     const supabase = createClient();
     const { error } = await supabase
       .from("profiles")
       .update({ is_public: newValue })
-      .eq("id", user.id);
+      .eq("id", currentUserId);
 
-    if (!error) {
-      setIsPublic(newValue);
-      await fetchProfiles();
+    if (error) {
+      setIsPublic(!newValue);
+    } else {
+      router.refresh();
     }
     setIsUpdatingPrivacy(false);
   };
 
   // Filter + slice based on active sub-tab
   const { top50, currentUserEntry, currentUserInTop50 } = useMemo(() => {
-    let filtered = allProfiles;
+    let filtered = initialProfiles;
 
     if (activeSubTab === "university" && profile?.university) {
-      filtered = allProfiles.filter((e) => e.university === profile.university);
+      filtered = initialProfiles.filter((e) => e.university === profile.university);
     } else if (activeSubTab === "specialty" && profile?.specialty) {
-      filtered = allProfiles.filter((e) => e.specialty === profile.specialty);
+      filtered = initialProfiles.filter((e) => e.specialty === profile.specialty);
     }
 
     // Re-rank after filtering
     const reranked = filtered.map((entry, i) => ({ ...entry, rank: i + 1 }));
     const top50 = reranked.slice(0, 50);
-    const currentUserEntry = reranked.find((e) => e.id === user?.id) || null;
-    const currentUserInTop50 = top50.some((e) => e.id === user?.id);
+    const currentUserEntry = reranked.find((e) => e.id === currentUserId) || null;
+    const currentUserInTop50 = top50.some((e) => e.id === currentUserId);
 
     return { top50, currentUserEntry, currentUserInTop50 };
-  }, [allProfiles, activeSubTab, profile?.university, profile?.specialty, user?.id]);
+  }, [initialProfiles, activeSubTab, profile?.university, profile?.specialty, currentUserId]);
 
   const subTabs: { id: SubTab; label: string }[] = [
     { id: "global", label: t("leaderboard.global") },
@@ -221,15 +161,8 @@ export function LeaderboardView() {
           </span>
         </div>
 
-        {/* Loading */}
-        {loading && (
-          <div className="py-16 text-center">
-            <div className="inline-block w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
         {/* Empty */}
-        {!loading && top50.length === 0 && (
+        {top50.length === 0 && (
           <div className="py-16 text-center">
             <Trophy className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-400 font-mono uppercase tracking-widest">
@@ -239,9 +172,8 @@ export function LeaderboardView() {
         )}
 
         {/* Rows */}
-        {!loading &&
-          top50.map((entry) => {
-            const isCurrentUser = entry.id === user?.id;
+        {top50.map((entry) => {
+            const isCurrentUser = entry.id === currentUserId;
             const decoration = getRankDecoration(entry.rank);
             const avatarUrl = entry.avatar_url;
 
@@ -317,7 +249,7 @@ export function LeaderboardView() {
           })}
 
         {/* Pinned current user if not in top 50 (or hidden) */}
-        {!loading && !isPublic && myProfileData && (
+        {!isPublic && currentUserProfile && (
           <>
             {/* Separator */}
             <div className="px-4 py-2 bg-gray-50 border-y border-gray-200">
@@ -338,44 +270,44 @@ export function LeaderboardView() {
 
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 rounded-full border-[1.5px] border-gray-400 bg-gray-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  {myProfileData.avatar_url ? (
-                    <img src={myProfileData.avatar_url} alt="" className="w-full h-full object-cover opacity-60" />
+                  {currentUserProfile.avatar_url ? (
+                    <img src={currentUserProfile.avatar_url} alt="" className="w-full h-full object-cover opacity-60" />
                   ) : (
                     <UserIcon className="w-4 h-4 text-gray-400" />
                   )}
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold truncate text-gray-500">
-                    {myProfileData.full_name || "Anonymous"}
+                    {currentUserProfile.full_name || "Anonymous"}
                     <span className="ml-2 text-[9px] bg-gray-400 text-white px-1.5 py-0.5 font-mono uppercase tracking-widest">
                       HIDDEN
                     </span>
                   </p>
                   <p className="text-[10px] text-gray-400 truncate uppercase tracking-wider">
-                    {myProfileData.university || "—"}
+                    {currentUserProfile.university || "—"}
                   </p>
                 </div>
               </div>
 
               <span className="text-xs font-mono text-gray-400 hidden md:block">
-                {myProfileData.total_sessions} {t("leaderboard.sessions").toLowerCase()}
+                {currentUserProfile.total_sessions} {t("leaderboard.sessions").toLowerCase()}
               </span>
 
               <span className="text-xs font-mono text-gray-400 hidden md:block">
-                {myProfileData.total_time_minutes >= 60
-                  ? `${Math.floor(myProfileData.total_time_minutes / 60)}h ${myProfileData.total_time_minutes % 60}m`
-                  : `${myProfileData.total_time_minutes}m`}
+                {currentUserProfile.total_time_minutes >= 60
+                  ? `${Math.floor(currentUserProfile.total_time_minutes / 60)}h ${currentUserProfile.total_time_minutes % 60}m`
+                  : `${currentUserProfile.total_time_minutes}m`}
               </span>
 
               <span className="text-sm font-black font-mono text-right text-gray-500">
-                {myProfileData.best_score.toFixed(1)}<span className="text-[9px] text-gray-400 ml-0.5">/20</span>
+                {currentUserProfile.best_score.toFixed(1)}<span className="text-[9px] text-gray-400 ml-0.5">/20</span>
               </span>
             </div>
           </>
         )}
 
         {/* Pinned current user if public but not in top 50 */}
-        {!loading && isPublic && currentUserEntry && !currentUserInTop50 && (
+        {isPublic && currentUserEntry && !currentUserInTop50 && (
           <>
             {/* Separator */}
             <div className="px-4 py-2 bg-gray-50 border-y border-gray-200">
