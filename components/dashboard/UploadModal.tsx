@@ -21,7 +21,6 @@ import {
   validateFile,
   MAX_FILE_SIZE_MB,
 } from "@/lib/pdf-analyzer";
-import { createClient } from "@/lib/supabase/client";
 import { Portal } from "@/components/ui/portal";
 
 // ── Types ───────────────────────────────────────────────────
@@ -130,12 +129,14 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
   };
 
   // ── Core Pipeline ───────────────────────────────────────
+  // Hybrid approach:
+  //   Step 1-2: Client-side validation + text extraction (fast, no server load)
+  //   Step 3-4: Send file + extracted text to API route via FormData
+  //             (API handles storage upload with server-side Supabase client)
   const processAndUpload = async (
     file: File,
     confirmDeletion: boolean = false
   ) => {
-    const supabase = createClient();
-
     try {
       // ▸ Step 1: Validating
       setUploadStatus({
@@ -143,6 +144,9 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
         currentStep: 0,
         message: "Checking file...",
       });
+
+      // Small delay so the UI renders the first step
+      await new Promise((r) => setTimeout(r, 100));
 
       // ▸ Step 2: Extracting text + thumbnail client-side
       setUploadStatus({
@@ -153,78 +157,30 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
 
       const analysis = await analyzeFile(file);
 
-      // ▸ Step 3: Upload file + thumbnail directly to Supabase Storage
+      // ▸ Step 3: Upload file + metadata to the API route
+      //   The server handles Supabase Storage (it has the right credentials)
       setUploadStatus({
         status: "processing",
         currentStep: 2,
         message: "Uploading to cloud...",
       });
 
-      const timestamp = Date.now();
-      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("You must be logged in to upload.");
-
-      const filePath = `${user.id}/${timestamp}_${safeName}`;
-
-      // Upload PDF/DOCX to 'pfes' bucket
-      const { error: storageError } = await supabase.storage
-        .from("pfes")
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type || "application/octet-stream",
-        });
-
-      if (storageError) {
-        throw new Error(`Storage upload failed: ${storageError.message}`);
-      }
-
-      // Upload thumbnail to 'thumbnails' bucket (if available)
-      let thumbnailUrl: string | null = null;
+      const formData = new FormData();
+      formData.append("file", file);
       if (analysis.thumbnail) {
-        const thumbPath = `${user.id}/${timestamp}_${safeName.replace(/\.(pdf|docx)$/i, "")}_thumb.png`;
-        const { error: thumbError } = await supabase.storage
-          .from("thumbnails")
-          .upload(thumbPath, analysis.thumbnail, {
-            upsert: true,
-            contentType: "image/png",
-          });
-
-        if (!thumbError) {
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
-          thumbnailUrl = publicUrl;
-        } else {
-          console.error("Thumbnail upload error:", thumbError);
-        }
+        formData.append("thumbnail", analysis.thumbnail, "thumbnail.png");
       }
-
-      // ▸ Step 4: Send metadata to API for DB insertion
-      setUploadStatus({
-        status: "processing",
-        currentStep: 3,
-        message: "Finalizing your report...",
-      });
+      formData.append("pageCount", analysis.pageCount.toString());
+      formData.append("wordCount", analysis.wordCount.toString());
+      formData.append("extractedText", analysis.extractedText);
+      formData.append("fileType", analysis.fileType);
+      if (confirmDeletion) {
+        formData.append("confirmDeletion", "true");
+      }
 
       const response = await fetch("/api/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: file.name,
-          filePath,
-          thumbnailUrl,
-          pageCount: analysis.pageCount,
-          wordCount: analysis.wordCount,
-          sizeBytes: file.size,
-          extractedText: analysis.extractedText,
-          fileType: analysis.fileType,
-          confirmDeletion,
-        }),
+        body: formData,
       });
 
       const data = await response.json();
@@ -233,7 +189,17 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
         throw new Error(data.error || "Upload failed");
       }
 
-      // ▸ Done!
+      // ▸ Step 4: Done (the API handled storage + DB in one shot)
+      setUploadStatus({
+        status: "processing",
+        currentStep: 3,
+        message: "Finalizing...",
+      });
+
+      // Brief pause to show the last step
+      await new Promise((r) => setTimeout(r, 400));
+
+      // ▸ Complete!
       setUploadStatus({
         status: "complete",
         currentStep: 3,

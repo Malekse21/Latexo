@@ -163,11 +163,11 @@ export function AftermathDashboard({ simulationData, lastScoreData }: AftermathD
           </div>
           
           <h2 className="text-2xl font-serif font-semibold tracking-tight text-gray-900 mb-3">
-            {t('dashboard.need_simulate') || "No Simulation Results Yet"}
+            {t('No Simulation Results Yet') || "No Simulation Results Yet"}
           </h2>
           
           <p className="text-sm text-gray-500 mb-8 leading-relaxed max-w-sm">
-            You haven't completed any defense simulations yet. Try running a simulation first to generate your grades, feedback, and flex receipt!
+            You haven't completed any simulations yet. Try running a simulation first to generate your grades, feedback, and flex receipt!
           </p>
           
           <button
