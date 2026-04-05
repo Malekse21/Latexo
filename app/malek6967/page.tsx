@@ -239,6 +239,7 @@ export default function AdminPortalPage() {
           <div className="space-y-4">
             <input
               type="password"
+              autoComplete="new-password"
               value={inputToken}
               onChange={(e) => setInputToken(e.target.value)}
               placeholder="ACCESS KEY"
