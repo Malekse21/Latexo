@@ -138,89 +138,94 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  // ──────────────────────────────────────────────────────────────────
+  // Effect 1: Auth listener — ONLY sets user/session state.
+  // NEVER make Supabase queries inside onAuthStateChange — it deadlocks
+  // because the client's internal auth lock isn't released until this
+  // callback returns, but the query needs that lock.
+  // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    let mounted = true;
-    let profileLoaded = false; // Dedup flag — prevent redundant fetches from rapid events
     console.log("[UserContext] ===== Provider Mounted. Starting auth listener =====");
 
-    const handleAuthEvent = async (event: AuthChangeEvent, currentSession: Session | null) => {
-      if (!mounted) return;
-
-      console.log(`[UserContext] Auth Event: "${event}"`, {
-        hasSession: !!currentSession,
-        userId: currentSession?.user?.id?.substring(0, 8) ?? "none",
-        tokenExpiry: currentSession?.expires_at 
-          ? new Date(currentSession.expires_at * 1000).toISOString() 
-          : "N/A",
-      });
-
-      // Skip TOKEN_REFRESHED — session user hasn't changed, profile is unchanged
-      if (event === 'TOKEN_REFRESHED') {
-        console.log("[UserContext] TOKEN_REFRESHED — skipping (profile unchanged)");
-        return;
-      }
-
-      // On SIGNED_OUT, clear everything
-      if (event === 'SIGNED_OUT' || !currentSession?.user) {
-        console.log("[UserContext] No session/signed out. Clearing state.");
-        setSession(null);
-        setUser(null);
-        setProfile(null);
-        profileLoaded = false;
-        if (mounted) setLoading(false);
-        return;
-      }
-
-      // We have a valid session — update user/session state
-      setSession(currentSession);
-      setUser(currentSession.user);
-
-      // Dedup: if profile is already loaded for this user, don't re-fetch
-      // unless this is a SIGNED_IN event (which means new sign-in or page load)
-      if (profileLoaded && event !== 'SIGNED_IN') {
-        console.log(`[UserContext] Profile already loaded. Skipping fetch for event: "${event}"`);
-        if (mounted) setLoading(false);
-        return;
-      }
-
-      // Fetch profile
-      try {
-        console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
-        const data = await fetchProfile(currentSession.user.id);
-        console.log(`[UserContext] fetchProfile result:`, {
-          success: !!data,
-          credits: data?.credits ?? "N/A",
-          streak: data?.current_streak ?? "N/A",
-          hasAvatar: !!data?.avatar_url,
-          fullName: data?.full_name ?? "N/A",
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event: AuthChangeEvent, currentSession: Session | null) => {
+        console.log(`[UserContext] Auth Event: "${event}"`, {
+          hasSession: !!currentSession,
+          userId: currentSession?.user?.id?.substring(0, 8) ?? "none",
+          tokenExpiry: currentSession?.expires_at
+            ? new Date(currentSession.expires_at * 1000).toISOString()
+            : "N/A",
         });
 
-        if (mounted) {
-          if (data) {
-            setProfile(data);
-            profileLoaded = true;
-            console.log("[UserContext] ✅ Profile state SET. credits=%d streak=%d", data.credits, data.current_streak ?? 0);
-          } else {
-            console.warn("[UserContext] ⚠️ fetchProfile returned null — profile state NOT cleared (keeping previous).");
-            // IMPORTANT: Do NOT clear profile here. If we already have a profile,
-            // keep it. This prevents the "disappearing data" issue.
-          }
+        // Skip TOKEN_REFRESHED — session user hasn't changed
+        if (event === 'TOKEN_REFRESHED') {
+          console.log("[UserContext] TOKEN_REFRESHED — skipping");
+          return;
+        }
+
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          console.log("[UserContext] User/session state updated from auth event.");
+        } else {
+          console.log("[UserContext] No session — clearing all state.");
+          setSession(null);
+          setUser(null);
+          setProfile(null);
           setLoading(false);
         }
-      } catch (err) {
-        console.error("[UserContext] Profile fetch threw:", err);
-        if (mounted) setLoading(false);
       }
-    };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthEvent);
+    );
 
     return () => {
       console.log("[UserContext] ===== Provider Unmounting =====");
-      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Effect 2: Fetch profile whenever `user` changes.
+  // Runs OUTSIDE onAuthStateChange, so no deadlock.
+  // ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      console.log("[UserContext] No user — skipping profile fetch.");
+      return;
+    }
+
+    let cancelled = false;
+    console.log(`[UserContext] User changed → fetching profile for ${user.id}`);
+
+    const loadProfile = async () => {
+      const data = await fetchProfile(user.id);
+      if (cancelled) {
+        console.log("[UserContext] Profile fetch completed but effect was cancelled.");
+        return;
+      }
+
+      console.log("[UserContext] fetchProfile result:", {
+        success: !!data,
+        credits: data?.credits ?? "N/A",
+        streak: data?.current_streak ?? "N/A",
+        hasAvatar: !!data?.avatar_url,
+        fullName: data?.full_name ?? "N/A",
+      });
+
+      if (data) {
+        setProfile(data);
+        console.log("[UserContext] ✅ Profile SET. credits=%d streak=%d", data.credits, data.current_streak ?? 0);
+      } else {
+        console.warn("[UserContext] ⚠️ fetchProfile returned null — keeping previous profile.");
+      }
+      setLoading(false);
+    };
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]); // Only re-run when the actual user ID changes
 
   const signOut = React.useCallback(async () => {
     console.log("[UserContext] signOut started");
