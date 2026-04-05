@@ -56,6 +56,13 @@ type SimulationPhase = "config" | "loading" | "arena" | "closing" | "aftermath";
 type Language = "french" | "english" | "mixed";
 type Difficulty = "gentle" | "standard" | "hostile";
 type ActiveSpeaker = "student" | "technical" | "academic" | "business" | null;
+type AlertModalType = 'no-report' | 'insufficient-credits' | 'error';
+
+interface AlertModalState {
+  isOpen: boolean;
+  type: AlertModalType;
+  message?: string;
+}
 
 interface TranscriptMessage {
   speaker: "student" | "technical" | "academic" | "business";
@@ -129,6 +136,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     duration: 15,
     difficulty: "standard",
   });
+  const [alertModal, setAlertModal] = useState<AlertModalState>({ isOpen: false, type: 'error' });
   const [loadingMessage, setLoadingMessage] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -630,7 +638,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
   const handleInitialize = async () => {
     if (!profile || profile.credits < currentCost) {
-      alert("Insufficient credits to start a simulation.");
+      setAlertModal({ isOpen: true, type: 'insufficient-credits' });
       return;
     }
 
@@ -705,7 +713,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       });
     } catch (error) {
       console.error("[Init] Failed to initialize simulation:", error);
-      alert("Failed to start simulation. Please try again.");
+      if (error instanceof Error && error.message.includes("No active report")) {
+        setAlertModal({ isOpen: true, type: 'no-report' });
+      } else {
+        setAlertModal({ isOpen: true, type: 'error', message: language === 'fr' ? "Échec du démarrage de la simulation. Veuillez réessayer." : "Failed to start simulation. Please try again." });
+      }
       setPhase("config");
     } finally {
       setIsProcessing(false);
@@ -942,9 +954,13 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       console.log('[Eval] Phase set to aftermath. Waiting for effect to call onSimulationComplete...');
     } catch (error) {
       console.error("[Eval] Failed to evaluate simulation:", error);
-      alert(config.language === 'french'
-        ? "\u00c9chec du traitement des r\u00e9sultats. Veuillez r\u00e9essayer."
-        : "Failed to process simulation results. Please try again.");
+      setAlertModal({ 
+        isOpen: true, 
+        type: 'error', 
+        message: config.language === 'french'
+          ? "\u00c9chec du traitement des r\u00e9sultats. Veuillez r\u00e9essayer."
+          : "Failed to process simulation results. Please try again." 
+      });
       resetSimulation();
     } finally {
       setIsEvaluating(false);
@@ -2010,6 +2026,76 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
              {/* Tab switch is now handled by the useEffect above — no IIFE side-effects */}
              
            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ALERT MODAL */}
+      <AnimatePresence>
+        {alertModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white max-w-sm w-full rounded-2xl shadow-xl overflow-hidden border border-gray-100"
+            >
+              <div className="p-6">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${
+                  alertModal.type === 'error' ? 'bg-red-50 text-red-600' :
+                  alertModal.type === 'insufficient-credits' ? 'bg-amber-50 text-amber-600' :
+                  'bg-blue-50 text-blue-600'
+                }`}>
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                
+                <h3 className="text-lg font-bold text-gray-900 mb-2">
+                  {alertModal.type === 'no-report' ? (language === 'fr' ? 'Aucun Rapport' : 'No Report Selected') :
+                   alertModal.type === 'insufficient-credits' ? (language === 'fr' ? 'Crédits Insuffisants' : 'Insufficient Credits') :
+                   (language === 'fr' ? 'Erreur' : 'Error')}
+                </h3>
+                
+                <p className="text-gray-600 text-sm leading-relaxed mb-6">
+                  {alertModal.type === 'no-report' 
+                    ? (language === 'fr' ? "Vous devez d'abord télécharger et sélectionner un rapport avant de commencer une simulation." : "You must upload and select a report before starting a simulation.")
+                    : alertModal.type === 'insufficient-credits'
+                    ? (language === 'fr' ? "Vous n'avez pas assez de crédits pour démarrer cette simulation." : "You do not have enough credits to start this simulation.")
+                    : alertModal.message}
+                </p>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setAlertModal({ ...alertModal, isOpen: false })}
+                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-medium transition-colors text-sm"
+                  >
+                    {language === 'fr' ? 'Fermer' : 'Close'}
+                  </button>
+                  {alertModal.type === 'no-report' && (
+                    <button
+                      onClick={() => {
+                        setAlertModal({ ...alertModal, isOpen: false });
+                        router.push('/dashboard?tab=briefing');
+                      }}
+                      className="flex-1 px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-xl font-medium transition-colors text-sm"
+                    >
+                      {language === 'fr' ? 'Aller au Briefing' : 'Go to Briefing'}
+                    </button>
+                  )}
+                  {alertModal.type === 'insufficient-credits' && (
+                    <button
+                      onClick={() => {
+                        setAlertModal({ ...alertModal, isOpen: false });
+                        // User can click Get Credits on the navbar manually 
+                      }}
+                      className="flex-1 px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-xl font-medium transition-colors text-sm flex items-center justify-center gap-2"
+                    >
+                      <Lock className="w-4 h-4" />
+                      {language === 'fr' ? "J'ai compris" : "Understood"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
