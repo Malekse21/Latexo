@@ -131,23 +131,53 @@ export function AftermathDashboard({ simulationData, lastScoreData }: AftermathD
 
   if (!simulation) {
     return (
-      <div className="w-full h-[calc(100vh-140px)] flex flex-col items-center justify-center text-center p-6">
-        <div className="w-16 h-16 bg-zinc-50 border border-zinc-200 rounded-full flex items-center justify-center mb-6">
-          <Briefcase className="w-8 h-8 text-zinc-400" />
-        </div>
-        <h2 className="text-xl font-bold tracking-tight mb-2 font-serif text-black uppercase">
-          {t('dashboard.need_simulate') || "No Simulation Results Yet"}
-        </h2>
-        <p className="text-zinc-500 text-sm mb-8 font-mono max-w-sm">
-          You haven't completed any defense simulations yet. Try running a simulation first to generate your grades, feedback, and flex receipt!
-        </p>
-        <button
-          onClick={handleNewSession}
-          className="bg-black text-white text-xs font-bold font-mono tracking-widest uppercase hover:bg-zinc-800 transition-colors h-11 px-8 rounded-none flex items-center justify-center gap-2"
+      <div className="w-full h-[calc(100vh-140px)] flex flex-col items-center justify-center p-6">
+        <motion.div
+           initial={{ opacity: 0, scale: 0.98, filter: "blur(4px)" }}
+           animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+           transition={{ duration: 0.4, ease: "easeOut" }}
+           className="max-w-md w-full border border-gray-200 rounded-2xl p-8 md:p-12 bg-white shadow-sm flex flex-col items-center text-center relative overflow-hidden"
         >
-          START SIMULATION
-          <ArrowRight className="w-4 h-4" />
-        </button>
+          {/* Top thick border accent */}
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-900" />
+          
+          <div className="relative mb-8 mt-2">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 15 }}
+              className="w-20 h-20 bg-gray-50 ring-1 ring-gray-200 rounded-full flex items-center justify-center z-10 relative shadow-sm"
+            >
+              <Briefcase className="w-8 h-8 text-gray-900" />
+            </motion.div>
+            {/* Spinning dashed ring */}
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-3 rounded-full border border-gray-300 border-dashed pointer-events-none"
+            />
+            {/* Action required indicator */}
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center z-20">
+              <span className="w-2 h-2 bg-gray-900 rounded-full animate-pulse" />
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-serif font-semibold tracking-tight text-gray-900 mb-3">
+            {t('dashboard.need_simulate') || "No Simulation Results Yet"}
+          </h2>
+          
+          <p className="text-sm text-gray-500 mb-8 leading-relaxed max-w-sm">
+            You haven't completed any defense simulations yet. Try running a simulation first to generate your grades, feedback, and flex receipt!
+          </p>
+          
+          <button
+            onClick={handleNewSession}
+            className="w-full group inline-flex h-12 items-center justify-center gap-2 bg-gray-900 text-white rounded-xl text-xs font-mono font-bold tracking-widest uppercase transition-all hover:bg-black hover:scale-[1.02] active:scale-95 px-6 shadow-sm"
+          >
+            START SIMULATION
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </button>
+        </motion.div>
       </div>
     );
   }

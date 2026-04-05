@@ -2,14 +2,45 @@
 
 import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, CheckCircle, AlertCircle, X, Loader2 } from "lucide-react";
+import {
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  X,
+  Loader2,
+  FileText,
+  ScanSearch,
+  CloudUpload,
+  DatabaseZap,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/context/user-context";
-import { analyzePdf } from "@/lib/pdf-analyzer";
+import {
+  analyzeFile,
+  FileValidationError,
+  validateFile,
+  MAX_FILE_SIZE_MB,
+} from "@/lib/pdf-analyzer";
+import { createClient } from "@/lib/supabase/client";
 import { Portal } from "@/components/ui/portal";
 
+// ── Types ───────────────────────────────────────────────────
+interface UploadStep {
+  key: "validating" | "extracting" | "uploading" | "finalizing";
+  label: string;
+  icon: React.ElementType;
+}
+
+const UPLOAD_STEPS: UploadStep[] = [
+  { key: "validating", label: "Validating file", icon: FileText },
+  { key: "extracting", label: "Extracting text & thumbnail", icon: ScanSearch },
+  { key: "uploading", label: "Uploading to cloud", icon: CloudUpload },
+  { key: "finalizing", label: "Saving report", icon: DatabaseZap },
+];
+
 interface UploadStatus {
-  status: 'idle' | 'uploading' | 'complete' | 'error';
+  status: "idle" | "processing" | "complete" | "error";
+  currentStep: number; // index into UPLOAD_STEPS
   message: string;
 }
 
@@ -19,17 +50,20 @@ interface UploadModalProps {
   onComplete: (reportId: string) => void;
 }
 
+// ── Component ───────────────────────────────────────────────
 export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
   const { t, profile } = useUser();
   const [isDragging, setIsDragging] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
-    status: 'idle',
-    message: ''
+    status: "idle",
+    currentStep: 0,
+    message: "",
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Drag & Drop ─────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -40,99 +74,201 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0 && files[0].type === 'application/pdf') {
-      handleFileSelected(files[0]);
-    }
-  }, [profile]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileSelected(files[0]);
-    }
-  }, [profile]);
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        handleFileSelected(files[0]);
+      }
+    },
+    [profile]
+  );
 
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        handleFileSelected(files[0]);
+      }
+      // Reset the input so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    [profile]
+  );
+
+  // ── File Selection ──────────────────────────────────────
   const handleFileSelected = (file: File) => {
+    // Early validation (type + size) — instant feedback before any processing
+    try {
+      validateFile(file);
+    } catch (err: any) {
+      setUploadStatus({
+        status: "error",
+        currentStep: 0,
+        message: err.message,
+      });
+      return;
+    }
+
     if (profile?.active_report_id) {
       setPendingFile(file);
       setShowConfirmation(true);
     } else {
-      uploadFile(file);
+      processAndUpload(file);
     }
   };
 
   const confirmUpload = () => {
     if (pendingFile) {
-      uploadFile(pendingFile, true);
+      processAndUpload(pendingFile, true);
       setShowConfirmation(false);
       setPendingFile(null);
     }
   };
 
-  const uploadFile = async (file: File, confirmDeletion: boolean = false) => {
-    setUploadStatus({ status: 'uploading', message: t('upload.analyzing') });
+  // ── Core Pipeline ───────────────────────────────────────
+  const processAndUpload = async (
+    file: File,
+    confirmDeletion: boolean = false
+  ) => {
+    const supabase = createClient();
 
     try {
-      // Use new client-side analysis function
-      const { pageCount, wordCount, thumbnail } = await analyzePdf(file);
-      
-      setUploadStatus({ status: 'uploading', message: t('upload.uploading_pdf') });
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      if (thumbnail) {
-        formData.append('thumbnail', thumbnail, 'thumbnail.png');
-      }
-      // Send calculated stats to server
-      formData.append('pageCount', pageCount.toString());
-      formData.append('wordCount', wordCount.toString());
-      if (confirmDeletion) {
-        formData.append('confirmDeletion', 'true');
+      // ▸ Step 1: Validating
+      setUploadStatus({
+        status: "processing",
+        currentStep: 0,
+        message: "Checking file...",
+      });
+
+      // ▸ Step 2: Extracting text + thumbnail client-side
+      setUploadStatus({
+        status: "processing",
+        currentStep: 1,
+        message: "Scanning your document...",
+      });
+
+      const analysis = await analyzeFile(file);
+
+      // ▸ Step 3: Upload file + thumbnail directly to Supabase Storage
+      setUploadStatus({
+        status: "processing",
+        currentStep: 2,
+        message: "Uploading to cloud...",
+      });
+
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+
+      // Get current user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("You must be logged in to upload.");
+
+      const filePath = `${user.id}/${timestamp}_${safeName}`;
+
+      // Upload PDF/DOCX to 'pfes' bucket
+      const { error: storageError } = await supabase.storage
+        .from("pfes")
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type || "application/octet-stream",
+        });
+
+      if (storageError) {
+        throw new Error(`Storage upload failed: ${storageError.message}`);
       }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      // Upload thumbnail to 'thumbnails' bucket (if available)
+      let thumbnailUrl: string | null = null;
+      if (analysis.thumbnail) {
+        const thumbPath = `${user.id}/${timestamp}_${safeName.replace(/\.(pdf|docx)$/i, "")}_thumb.png`;
+        const { error: thumbError } = await supabase.storage
+          .from("thumbnails")
+          .upload(thumbPath, analysis.thumbnail, {
+            upsert: true,
+            contentType: "image/png",
+          });
+
+        if (!thumbError) {
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
+          thumbnailUrl = publicUrl;
+        } else {
+          console.error("Thumbnail upload error:", thumbError);
+        }
+      }
+
+      // ▸ Step 4: Send metadata to API for DB insertion
+      setUploadStatus({
+        status: "processing",
+        currentStep: 3,
+        message: "Finalizing your report...",
+      });
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          filePath,
+          thumbnailUrl,
+          pageCount: analysis.pageCount,
+          wordCount: analysis.wordCount,
+          sizeBytes: file.size,
+          extractedText: analysis.extractedText,
+          fileType: analysis.fileType,
+          confirmDeletion,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
+        throw new Error(data.error || "Upload failed");
       }
 
-      setUploadStatus({ 
-        status: 'complete', 
-        message: t('upload.upload_success', { pageCount, wordCount })
+      // ▸ Done!
+      setUploadStatus({
+        status: "complete",
+        currentStep: 3,
+        message: `${analysis.pageCount} pages · ${analysis.wordCount.toLocaleString()} words`,
       });
 
       setTimeout(() => {
-        onComplete(data.report_id || '');
+        onComplete(data.report_id || "");
         onClose();
-        setUploadStatus({ status: 'idle', message: '' });
+        setUploadStatus({ status: "idle", currentStep: 0, message: "" });
       }, 1500);
-
     } catch (error: any) {
-      console.error('Upload error:', error);
-      setUploadStatus({ 
-        status: 'error', 
-        message: error.message || t('upload.failed')
+      console.error("Upload error:", error);
+      setUploadStatus({
+        status: "error",
+        currentStep: 0,
+        message:
+          error instanceof FileValidationError
+            ? error.message
+            : error.message || "Something went wrong. Please try again.",
       });
     }
   };
 
+  // ── Close ───────────────────────────────────────────────
   const handleClose = () => {
-    if (uploadStatus.status !== 'uploading') {
-      setUploadStatus({ status: 'idle', message: '' });
+    if (uploadStatus.status !== "processing") {
+      setUploadStatus({ status: "idle", currentStep: 0, message: "" });
+      setShowConfirmation(false);
+      setPendingFile(null);
       onClose();
     }
   };
 
+  // ── Render ──────────────────────────────────────────────
   return (
     <Portal>
       <AnimatePresence>
@@ -154,19 +290,24 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
               className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none"
             >
               <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg pointer-events-auto">
+                {/* ── Header ─────────────────────────────── */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                  <h2 className="text-xl font-bold text-black">{t('upload.title')}</h2>
+                  <h2 className="text-xl font-bold text-black">
+                    {t("upload.title") || "Upload Report"}
+                  </h2>
                   <button
                     onClick={handleClose}
-                    disabled={uploadStatus.status === 'uploading'}
+                    disabled={uploadStatus.status === "processing"}
                     className="text-gray-400 hover:text-black transition-colors disabled:opacity-50"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
+                {/* ── Body ───────────────────────────────── */}
                 <div className="p-6">
-                  {uploadStatus.status === 'idle' && !showConfirmation && (
+                  {/* Idle — Drop zone */}
+                  {uploadStatus.status === "idle" && !showConfirmation && (
                     <div
                       onDragOver={handleDragOver}
                       onDragLeave={handleDragLeave}
@@ -174,36 +315,44 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                       onClick={() => fileInputRef.current?.click()}
                       className={cn(
                         "border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all",
-                        isDragging 
-                          ? "border-black bg-gray-50" 
+                        isDragging
+                          ? "border-black bg-gray-50"
                           : "border-gray-300 hover:border-gray-400"
                       )}
                     >
                       <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                       <p className="text-sm font-medium text-black mb-1">
-                        {t('upload.drop_here')}
+                        {t("upload.drop_here") ||
+                          "Drop your file here, or click to browse"}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {t('upload.only_pdf')}
+                        PDF or DOCX · Max {MAX_FILE_SIZE_MB} MB
                       </p>
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".pdf,application/pdf"
+                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         onChange={handleFileSelect}
                         className="hidden"
                       />
                     </div>
                   )}
 
+                  {/* Confirmation — update existing report */}
                   {showConfirmation && (
                     <div className="space-y-6 text-center">
                       <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
                         <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-                        <h3 className="text-lg font-bold text-amber-900 mb-2">Update Existing Report</h3>
+                        <h3 className="text-lg font-bold text-amber-900 mb-2">
+                          Update Existing Report
+                        </h3>
                         <p className="text-sm text-amber-700">
-                          Uploading a new report will update your current file and text extraction. 
-                          <br/><strong>Your existing simulations, streak, and history will be preserved.</strong>
+                          Uploading a new report will update your current file
+                          and text extraction. <br />
+                          <strong>
+                            Your existing simulations, streak, and history will
+                            be preserved.
+                          </strong>
                         </p>
                       </div>
                       <div className="flex gap-3">
@@ -226,43 +375,107 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                     </div>
                   )}
 
-                  {uploadStatus.status !== 'idle' && !showConfirmation && (
-                    <div className="space-y-6 text-center">
-                      <div className="flex justify-center">
-                        {uploadStatus.status === 'uploading' && (
-                          <div className="flex flex-col items-center gap-4">
-                            <Loader2 className="w-12 h-12 text-black animate-spin" />
-                            <div className="space-y-1">
-                               <p className="text-lg font-bold text-black">{uploadStatus.message}</p>
-                               <p className="text-sm text-gray-500">{t('upload.analyzing_subtitle')}</p>
+                  {/* Processing — step-by-step progress */}
+                  {uploadStatus.status === "processing" && (
+                    <div className="space-y-5 py-2">
+                      {UPLOAD_STEPS.map((step, index) => {
+                        const isActive = index === uploadStatus.currentStep;
+                        const isCompleted = index < uploadStatus.currentStep;
+                        const isPending = index > uploadStatus.currentStep;
+                        const Icon = step.icon;
+
+                        return (
+                          <motion.div
+                            key={step.key}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.05 }}
+                            className={cn(
+                              "flex items-center gap-4 px-4 py-3 rounded-lg transition-all",
+                              isActive && "bg-gray-50 border border-gray-200",
+                              isCompleted && "opacity-60",
+                              isPending && "opacity-30"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all",
+                                isActive && "bg-black",
+                                isCompleted && "bg-gray-300",
+                                isPending && "bg-gray-100"
+                              )}
+                            >
+                              {isActive ? (
+                                <Loader2 className="w-4 h-4 text-white animate-spin" />
+                              ) : isCompleted ? (
+                                <CheckCircle className="w-4 h-4 text-white" />
+                              ) : (
+                                <Icon className="w-4 h-4 text-gray-400" />
+                              )}
                             </div>
-                          </div>
-                        )}
-                        {uploadStatus.status === 'complete' && (
-                          <div className="flex flex-col items-center gap-2">
-                            <CheckCircle className="w-16 h-16 text-green-500" />
-                            <p className="text-xl font-bold text-black">{t('upload.done')}</p>
-                          </div>
-                        )}
-                        {uploadStatus.status === 'error' && (
-                          <AlertCircle className="w-16 h-16 text-red-500" />
-                        )}
-                      </div>
-                      
-                      {uploadStatus.status !== 'uploading' && (
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className={cn(
+                                  "text-sm font-medium truncate",
+                                  isActive
+                                    ? "text-black"
+                                    : isCompleted
+                                      ? "text-gray-500"
+                                      : "text-gray-400"
+                                )}
+                              >
+                                {step.label}
+                              </p>
+                              {isActive && uploadStatus.message && (
+                                <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                  {uploadStatus.message}
+                                </p>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Complete */}
+                  {uploadStatus.status === "complete" && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col items-center gap-3 py-6"
+                    >
+                      <CheckCircle className="w-16 h-16 text-gray-900" />
+                      <p className="text-xl font-bold text-black">
+                        {t("upload.done") || "Upload Complete"}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {uploadStatus.message}
+                      </p>
+                    </motion.div>
+                  )}
+
+                  {/* Error */}
+                  {uploadStatus.status === "error" && (
+                    <div className="space-y-6 text-center py-4">
+                      <div className="flex flex-col items-center gap-3">
+                        <AlertCircle className="w-16 h-16 text-red-500" />
                         <p className="text-sm font-medium text-black">
                           {uploadStatus.message}
                         </p>
-                      )}
-
-                      {uploadStatus.status === 'error' && (
-                        <button
-                          onClick={() => setUploadStatus({ status: 'idle', message: '' })}
-                          className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition-colors"
-                        >
-                          {t('upload.try_again')}
-                        </button>
-                      )}
+                      </div>
+                      <button
+                        onClick={() =>
+                          setUploadStatus({
+                            status: "idle",
+                            currentStep: 0,
+                            message: "",
+                          })
+                        }
+                        className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition-colors"
+                      >
+                        {t("upload.try_again") || "Try Again"}
+                      </button>
                     </div>
                   )}
                 </div>

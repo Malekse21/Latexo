@@ -55,6 +55,39 @@ function cleanBoilerplate(raw: string): string {
   return text.trim();
 }
 
+/**
+ * Simple non-AI language detection based on common word frequency
+ */
+function detectLanguage(text: string): "french" | "english" {
+  const sample = text.toLowerCase().slice(0, 10000);
+  const frenchWords = [" le ", " la ", " les ", " et ", " est ", " pour ", " dans "];
+  const englishWords = [" the ", " and ", " is ", " for ", " with ", " that ", " this "];
+  
+  let frenchCount = 0;
+  let englishCount = 0;
+  
+  frenchWords.forEach(word => {
+    const matches = sample.match(new RegExp(word, 'g'));
+    if (matches) frenchCount += matches.length;
+  });
+  
+  englishWords.forEach(word => {
+    const matches = sample.match(new RegExp(word, 'g'));
+    if (matches) englishCount += matches.length;
+  });
+  
+  return frenchCount >= englishCount ? "french" : "english";
+}
+
+// ── API Route ────────────────────────────────────────────────
+// The client now handles:
+//   1. File validation (type, size, page count)
+//   2. Text extraction (pdfjs-dist / mammoth in the browser)
+//   3. Thumbnail generation
+//   4. Direct upload to Supabase Storage
+//
+// This endpoint only receives lightweight JSON metadata and writes to the DB.
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -64,21 +97,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const thumbnail = formData.get('thumbnail') as File | null;
-    const confirmDeletion = formData.get('confirmDeletion') === 'true';
+    const body = await request.json();
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    const {
+      fileName,
+      filePath,
+      thumbnailUrl,
+      pageCount,
+      wordCount,
+      sizeBytes,
+      extractedText,
+      fileType,
+      confirmDeletion,
+    } = body as {
+      fileName: string;
+      filePath: string;
+      thumbnailUrl: string | null;
+      pageCount: number;
+      wordCount: number;
+      sizeBytes: number;
+      extractedText: string;
+      fileType: "pdf" | "docx";
+      confirmDeletion?: boolean;
+    };
+
+    if (!fileName || !filePath) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Handle One-Report Policy Updates: Delete old files from storage, keep DB row
-    let existingReportId = null;
+    // ── Handle One-Report Policy Updates ──
+    let existingReportId: string | null = null;
     if (confirmDeletion) {
       console.log(`Updating existing report files for user ${user.id} before new upload...`);
       
-      const { data: profile } = await supabase.from('profiles').select('active_report_id').eq('id', user.id).single();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('active_report_id')
+        .eq('id', user.id)
+        .single();
       
       if (profile?.active_report_id) {
         const { data: existingReport } = await supabase
@@ -92,191 +148,52 @@ export async function POST(request: NextRequest) {
           
           // Remove old files from storage, DO NOT delete DB row
           if (existingReport.file_path) {
-             const { error: pdfError } = await supabase.storage.from('pfes').remove([existingReport.file_path]);
-             if (pdfError) console.error("Error deleting old PDF:", pdfError);
+            const { error: pdfError } = await supabase.storage
+              .from('pfes')
+              .remove([existingReport.file_path]);
+            if (pdfError) console.error("Error deleting old PDF:", pdfError);
           }
           if (existingReport.thumbnail_url) {
-             try {
-               const urlParts = existingReport.thumbnail_url.split('/');
-               const fileName = urlParts[urlParts.length - 1];
-               const thumbPath = `${user.id}/${fileName}`;
-               const { error: thumbError } = await supabase.storage.from('thumbnails').remove([thumbPath]);
-               if (thumbError) console.error("Error deleting old thumbnail:", thumbError);
-             } catch(e) {}
+            try {
+              const urlParts = existingReport.thumbnail_url.split('/');
+              const thumbFileName = urlParts[urlParts.length - 1];
+              const thumbPath = `${user.id}/${thumbFileName}`;
+              const { error: thumbError } = await supabase.storage
+                .from('thumbnails')
+                .remove([thumbPath]);
+              if (thumbError) console.error("Error deleting old thumbnail:", thumbError);
+            } catch(e) {}
           }
         }
       }
     }
 
-    // 1. Get stats from client
-    const pageCount = parseInt(formData.get('pageCount') as string || '0', 10);
-    const wordCount = parseInt(formData.get('wordCount') as string || '0', 10);
+    // ── Clean + Detect Language ──
+    const cleanedText = cleanBoilerplate(extractedText || "").trim();
+    const detectedLang = detectLanguage(extractedText || "");
 
-    // 2. Upload PDF to Storage (Private bucket 'pfes')
-    const timestamp = Date.now();
-    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const filePath = `${user.id}/${timestamp}_${safeName}`;
+    console.log(`Received ${(extractedText || "").length} chars for ${fileName}. Language: ${detectedLang}`);
 
-    const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-      .from('pfes')
-      .upload(filePath, file, {
-        upsert: true,
-        contentType: 'application/pdf'
-      });
-
-    if (pdfUploadError) {
-      throw new Error(`PDF Storage Upload failed: ${pdfUploadError.message}`);
-    }
-
-    // 3. Upload Thumbnail to Storage (Public bucket 'thumbnails') if present
-    let thumbnailUrl = null;
-    if (thumbnail) {
-      const thumbnailPath = `${user.id}/${timestamp}_${safeName.replace('.pdf', '')}_thumb.png`;
-      const { error: thumbUploadError } = await supabase.storage
-        .from('thumbnails')
-        .upload(thumbnailPath, thumbnail, {
-          upsert: true,
-          contentType: 'image/png'
-        });
-
-      if (!thumbUploadError) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('thumbnails')
-          .getPublicUrl(thumbnailPath);
-        thumbnailUrl = publicUrl;
-      } else {
-        console.error('Thumbnail upload error:', thumbUploadError);
-      }
-    }
-
-    // 4. Extract Text from PDF or DOCX
-    const fileName = file.name.toLowerCase();
-    let extractedText = "";
-
-    try {
-      if (fileName.endsWith(".pdf")) {
-        // PDF Extraction
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // Polyfill for DOMMatrix
-        if (!global.DOMMatrix) {
-          // @ts-ignore
-          global.DOMMatrix = class DOMMatrix {
-            constructor() {}
-            toString() {
-              return "matrix(1, 0, 0, 1, 0, 0)";
-            }
-            multiply() {
-              return this;
-            }
-            translate() {
-              return this;
-            }
-            scale() {
-              return this;
-            }
-          };
-        }
-
-        // @ts-ignore
-        const pdfjsModule = await import("pdfjs-dist/build/pdf.mjs");
-        const pdfjsLib = pdfjsModule.default || pdfjsModule;
-
-        const path = require("path");
-        const { pathToFileURL } = require("url");
-        
-        const workerPath = path.join(
-          process.cwd(),
-          "node_modules/pdfjs-dist/build/pdf.worker.mjs"
-        );
-        
-        // Convert to file:// URL for Windows compatibility
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
-
-        const uint8Array = new Uint8Array(buffer);
-        const loadingTask = pdfjsLib.getDocument({
-          data: uint8Array,
-          useSystemFonts: true,
-          disableFontFace: true,
-        });
-
-        const pdfDocument = await loadingTask.promise;
-        const numPages = pdfDocument.numPages;
-
-        for (let i = 1; i <= numPages; i++) {
-          const page = await pdfDocument.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(" ");
-          extractedText += pageText + "\n\n";
-        }
-      } else if (fileName.endsWith(".docx")) {
-        // DOCX Extraction
-        const mammoth = require("mammoth");
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const result = await mammoth.extractRawText({ buffer });
-        extractedText = result.value;
-      }
-
-      /**
-       * Simple non-AI language detection based on common word frequency
-       */
-      const detectLanguage = (text: string): "french" | "english" => {
-        const sample = text.toLowerCase().slice(0, 10000);
-        const frenchWords = [" le ", " la ", " les ", " et ", " est ", " pour ", " dans "];
-        const englishWords = [" the ", " and ", " is ", " for ", " with ", " that ", " this "];
-        
-        let frenchCount = 0;
-        let englishCount = 0;
-        
-        frenchWords.forEach(word => {
-          const matches = sample.match(new RegExp(word, 'g'));
-          if (matches) frenchCount += matches.length;
-        });
-        
-        englishWords.forEach(word => {
-          const matches = sample.match(new RegExp(word, 'g'));
-          if (matches) englishCount += matches.length;
-        });
-        
-        return frenchCount >= englishCount ? "french" : "english";
-      };
-
-      const detectedLang = detectLanguage(extractedText);
-
-      console.log(`Extracted ${extractedText.length} characters from ${file.name}. Detected language: ${detectedLang}`);
-      
-      // Pass the language to the database insertion
-      (request as any).detectedLang = detectedLang;
-    } catch (extractError: any) {
-      console.error("Text extraction error:", extractError);
-      // Don't fail the upload if extraction fails, just log it
-      extractedText = "";
-    }
-
-    // 5. Save to Database with extracted text
-    const cleanTitle = file.name
+    // ── Build clean title ──
+    const cleanTitle = fileName
       .replace(/\.(pdf|docx)$/i, '')
       .replace(/_/g, ' ')
       .replace(/-/g, ' ');
 
+    // ── Save to Database ──
     const reportDataPayload = {
       user_id: user.id,
       title: cleanTitle,
       name: cleanTitle,
       file_path: filePath,
       thumbnail_url: thumbnailUrl,
-      page_count: pageCount,
-      word_count: wordCount,
-      size_bytes: file.size,
+      page_count: pageCount || 0,
+      word_count: wordCount || 0,
+      size_bytes: sizeBytes || 0,
       status: 'completed', 
       data: {},
-      detected_language: (request as any).detectedLang || 'english',
-      extracted_text: cleanBoilerplate(extractedText).trim()
+      detected_language: detectedLang,
+      extracted_text: cleanedText,
     };
 
     let report;
@@ -307,7 +224,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Database Insert/Update failed: ${dbError.message}`);
     }
 
-    // 6. Update Profile's active_report_id
+    // ── Update Profile's active_report_id ──
     await supabase.from('profiles').update({ active_report_id: report.id }).eq('id', user.id);
 
     return NextResponse.json({ 
@@ -316,12 +233,15 @@ export async function POST(request: NextRequest) {
       stats: {
         pages: pageCount,
         words: wordCount,
-        extractedChars: extractedText.length
-       }
+        extractedChars: cleanedText.length,
+      }
     });
 
   } catch (error: any) {
     console.error('Upload API error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
