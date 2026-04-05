@@ -3,6 +3,7 @@
 import { X, Check, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { usePaymentModal, PACKS, type PackType } from "@/lib/hooks/usePaymentModal";
+import { useUser } from "@/lib/context/user-context";
 
 interface PackSelectionProps {
   currentCredits: number;
@@ -102,6 +103,7 @@ function PackCard({
 
 export function PackSelection({ currentCredits, onClose }: PackSelectionProps) {
   const { selectedPack, setSelectedPack, goTo } = usePaymentModal();
+  const { t } = useUser();
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -109,10 +111,10 @@ export function PackSelection({ currentCredits, onClose }: PackSelectionProps) {
       <div className="px-5 pt-5 pb-4 flex items-start justify-between border-b border-neutral-100">
         <div className="flex-1">
           <h2 className="text-xl md:text-2xl font-bold text-black mb-1">
-            Recharge tes crédits
+            {t('payment.recharge') || "Recharge tes crédits"}
           </h2>
           <p className="text-xs text-neutral-500">
-            Choisis le pack qui correspond à ta soutenance
+            {t('payment.choose_pack') || "Choisis le pack qui correspond à ta soutenance"}
           </p>
         </div>
 
@@ -182,7 +184,7 @@ export function PackSelection({ currentCredits, onClose }: PackSelectionProps) {
       {/* ── Footer ──────────────────────────────── */}
       <div className="px-5 py-4 border-t border-neutral-100 bg-neutral-50">
         <p className="text-center text-[10px] mb-3 text-neutral-500 font-mono">
-          Les crédits n&apos;expirent jamais · Paiement sécurisé via D17
+          {t('payment.footer') || "Les crédits n'expirent jamais · Paiement sécurisé via D17"}
         </p>
 
         <button
@@ -194,7 +196,7 @@ export function PackSelection({ currentCredits, onClose }: PackSelectionProps) {
               : "bg-neutral-200 text-neutral-400 cursor-not-allowed"
           }`}
         >
-          Continuer
+          {t('payment.continue') || "Continuer"}
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

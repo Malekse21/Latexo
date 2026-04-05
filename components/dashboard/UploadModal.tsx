@@ -30,11 +30,11 @@ interface UploadStep {
   icon: React.ElementType;
 }
 
-const UPLOAD_STEPS: UploadStep[] = [
-  { key: "validating", label: "Validating file", icon: FileText },
-  { key: "extracting", label: "Extracting text & thumbnail", icon: ScanSearch },
-  { key: "uploading", label: "Uploading to cloud", icon: CloudUpload },
-  { key: "finalizing", label: "Saving report", icon: DatabaseZap },
+const UPLOAD_STEPS_KEYS = [
+  { key: "validating", labelKey: "upload.step_validating", icon: FileText },
+  { key: "extracting", labelKey: "upload.step_extracting", icon: ScanSearch },
+  { key: "uploading", labelKey: "upload.step_uploading", icon: CloudUpload },
+  { key: "finalizing", labelKey: "upload.step_saving", icon: DatabaseZap },
 ];
 
 interface UploadStatus {
@@ -142,7 +142,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({
         status: "processing",
         currentStep: 0,
-        message: "Checking file...",
+        message: t("upload.msg_checking") || "Checking file...",
       });
 
       // Small delay so the UI renders the first step
@@ -152,7 +152,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({
         status: "processing",
         currentStep: 1,
-        message: "Scanning your document...",
+        message: t("upload.msg_scanning") || "Scanning your document...",
       });
 
       const analysis = await analyzeFile(file);
@@ -162,7 +162,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({
         status: "processing",
         currentStep: 2,
-        message: "Uploading to cloud...",
+        message: t("upload.step_uploading") || "Uploading to cloud...",
       });
 
       const formData = new FormData();
@@ -193,7 +193,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({
         status: "processing",
         currentStep: 3,
-        message: "Finalizing...",
+        message: t("upload.msg_finalizing") || "Finalizing...",
       });
 
       // Brief pause to show the last step
@@ -310,14 +310,12 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                       <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
                         <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
                         <h3 className="text-lg font-bold text-amber-900 mb-2">
-                          Update Existing Report
+                          {t("upload.update_title") || "Update Existing Report"}
                         </h3>
                         <p className="text-sm text-amber-700">
-                          Uploading a new report will update your current file
-                          and text extraction. <br />
+                          {t("upload.update_desc_1")} <br />
                           <strong>
-                            Your existing simulations, streak, and history will
-                            be preserved.
+                            {t("upload.update_desc_2")}
                           </strong>
                         </p>
                       </div>
@@ -329,13 +327,13 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                           }}
                           className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                         >
-                          Cancel
+                          {t("upload.cancel")}
                         </button>
                         <button
                           onClick={confirmUpload}
                           className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-bold"
                         >
-                          Yes, Update Report
+                          {t("upload.confirm_update")}
                         </button>
                       </div>
                     </div>
@@ -344,7 +342,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                   {/* Processing — step-by-step progress */}
                   {uploadStatus.status === "processing" && (
                     <div className="space-y-5 py-2">
-                      {UPLOAD_STEPS.map((step, index) => {
+                      {UPLOAD_STEPS_KEYS.map((step, index) => {
                         const isActive = index === uploadStatus.currentStep;
                         const isCompleted = index < uploadStatus.currentStep;
                         const isPending = index > uploadStatus.currentStep;
@@ -390,7 +388,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                                       : "text-gray-400"
                                 )}
                               >
-                                {step.label}
+                                {t(step.labelKey)}
                               </p>
                               {isActive && uploadStatus.message && (
                                 <p className="text-xs text-gray-500 mt-0.5 truncate">

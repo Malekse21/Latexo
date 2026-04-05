@@ -119,7 +119,7 @@ export function CardsView({
               <>
                 {/* Top row: label + score + mention */}
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">{t("dashboard.readiness")}</span>
                 </div>
 
                 {/* Big score */}
@@ -137,12 +137,12 @@ export function CardsView({
                   <div className="absolute top-0 h-full w-px bg-zinc-300" style={{ left: '85%' }} />
                 </div>
                 <div className="flex justify-between items-center mt-1">
-                  <p className="text-[9px] text-zinc-400 font-mono tracking-wide">cible: 85+</p>
+                  <p className="text-[9px] text-zinc-400 font-mono tracking-wide">{t("dashboard.target")}</p>
                 </div>
               </>
             ) : (
               <>
-                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">{t("dashboard.readiness")}</span>
                 <div className="flex items-baseline gap-1.5 mt-2 mb-2">
                   <span className="text-3xl font-black tabular-nums tracking-tighter leading-none text-zinc-200">—</span>
                   <span className="text-lg font-black text-zinc-100">/100</span>
@@ -178,7 +178,7 @@ export function CardsView({
 
           {/* ── Section 3: Performance + CTA ──────────────────── */}
           <div className="border border-t-0 border-zinc-200 p-4">
-            <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">Performance</span>
+            <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">{t("dashboard.performance")}</span>
 
             {hasSessionData && (
               <div className="mt-4">

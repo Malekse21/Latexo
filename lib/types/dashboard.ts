@@ -66,5 +66,13 @@ export function computeReadiness(
   recency: number
 ): number {
   if (sessionVol === 0) return 0;
-  return Math.round(avgScoreNorm * 0.50 + sessionVol * 0.35 + recency * 0.15);
+
+  const raw = avgScoreNorm * 0.60 + sessionVol * 0.25 + recency * 0.15;
+
+  // Performance multiplier: if avg grade is below 10/20 (avgScoreNorm < 50),
+  // scale down the entire readiness proportionally. This prevents recency and
+  // volume from inflating the score when actual performance is poor.
+  const multiplier = avgScoreNorm < 50 ? avgScoreNorm / 50 : 1;
+
+  return Math.round(raw * multiplier);
 }

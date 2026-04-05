@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { usePaymentModal, PACKS } from "@/lib/hooks/usePaymentModal";
+import { useUser } from "@/lib/context/user-context";
 
 // Confetti particle colors - Adjusted for B&W but keeping some monochrome/neutral hints, or just black/white/gray
 const CONFETTI_COLORS = ["#000000", "#333333", "#666666", "#999999", "#cccccc"];
@@ -69,6 +70,7 @@ export function ConfirmationSuccess({
   onStartSimulation: () => void;
 }) {
   const { selectedPack, close, reset } = usePaymentModal();
+  const { t } = useUser();
   const pack = selectedPack ? PACKS[selectedPack] : null;
   const newBalance = currentCredits + (pack?.credits || 0);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,7 +192,7 @@ export function ConfirmationSuccess({
           onClick={() => handleAction(onStartSimulation)}
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-none text-white bg-black text-xs font-black uppercase tracking-widest transition-colors hover:bg-neutral-800 cursor-pointer font-mono"
         >
-          Commencer ma simulation
+          {t('payment.start_sim') || "Commencer ma simulation"}
           <ArrowRight className="w-4 h-4" strokeWidth={3} />
         </button>
       </motion.div>
