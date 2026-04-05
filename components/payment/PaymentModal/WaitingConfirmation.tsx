@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Clock, Copy, Check, X } from "lucide-react";
 import { usePaymentModal, PACKS } from "@/lib/hooks/usePaymentModal";
+import { useUser } from "@/lib/context/user-context";
 
 const POLL_INTERVAL_MS = 15_000; // Poll every 15s
 const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 min max
@@ -15,6 +16,7 @@ export function WaitingConfirmation() {
     orderReference,
     goTo,
   } = usePaymentModal();
+  const { refreshProfile } = useUser();
 
   const [copied, setCopied] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
@@ -48,6 +50,8 @@ export function WaitingConfirmation() {
           const data = await res.json();
           if (data.status === 'COMPLETED') {
             if (pollRef.current) clearInterval(pollRef.current);
+            console.log('[WaitingConfirmation] Payment COMPLETED. Refreshing profile...');
+            await refreshProfile();
             goTo('success');
             return;
           }

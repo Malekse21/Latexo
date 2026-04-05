@@ -932,6 +932,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
       const data = await response.json();
       console.log('[Eval] API success. simulation_id =', data.simulation_id, 'grade =', data.final_grade);
+      
+      // Refresh profile to pick up updated streak + credits in the navbar
+      console.log('[Eval] Refreshing profile to sync streak/credits...');
+      await refreshProfile();
+      
       setEvaluationResults(data);
       setPhase("aftermath");
       console.log('[Eval] Phase set to aftermath. Waiting for effect to call onSimulationComplete...');

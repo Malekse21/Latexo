@@ -85,8 +85,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, retryOnNull = true): Promise<Profile | null> => {
     try {
+      console.log(`[UserContext] fetchProfile called for ${userId} (retry=${retryOnNull})`);
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
@@ -98,101 +99,114 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (error.message?.includes('aborted')) return null;
 
         console.error(
-          "Error fetching profile:",
+          "[UserContext] fetchProfile error:",
           error.message ?? "Unknown error",
           `(code: ${error.code ?? "N/A"}, status: ${(error as any).status ?? "N/A"})`
         );
 
         if (error.code === 'PGRST116') {
-          console.warn("Profile not found for user. Signing out...");
+          console.warn("[UserContext] Profile not found for user. Signing out...");
           await signOut();
         }
         return null;
       }
+
+      if (!data && retryOnNull) {
+        console.warn("[UserContext] fetchProfile returned null. Retrying in 500ms...");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return fetchProfile(userId, false);
+      }
+
+      console.log("[UserContext] fetchProfile result:", data ? "OK" : "null");
       return data;
     } catch (error: any) {
       // Silently ignore AbortError — React unmounted while fetch was in-flight
       if (isAbortError(error)) return null;
-      console.error("Unexpected error fetching profile:", error?.message ?? error);
+      console.error("[UserContext] Unexpected fetchProfile error:", error?.message ?? error);
       return null;
     }
   };
 
   const refreshProfile = React.useCallback(async () => {
     if (user) {
-      const data = await fetchProfile(user.id);
-      if (data) setProfile(data);
+      console.log("[UserContext] refreshProfile called for", user.id);
+      const data = await fetchProfile(user.id, false);
+      if (data) {
+        setProfile(data);
+        console.log("[UserContext] refreshProfile: profile updated. credits=", data.credits, "streak=", data.current_streak);
+      }
     }
   }, [user]);
 
   useEffect(() => {
     let mounted = true;
-    let hasReceivedSession = false;
-    console.log("[UserContext] Provider Mounted. Starting auth listener.");
+    console.log("[UserContext] Provider Mounted. Starting init.");
 
-    const handleSession = async (currentSession: Session | null) => {
-      if (!mounted) return;
-      hasReceivedSession = true;
+    // Phase 1: Eagerly load the session from cache/cookies (synchronous from Supabase's perspective)
+    const initSession = async () => {
+      try {
+        const { data: { session: cachedSession } } = await supabase.auth.getSession();
+        console.log("[UserContext] Eager getSession result:", { hasSession: !!cachedSession });
 
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+        if (!mounted) return;
 
-      if (currentSession?.user) {
-        try {
-          console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
-          const data = await fetchProfile(currentSession.user.id);
-          console.log(`[UserContext] fetchProfile Result:`, data);
+        setSession(cachedSession);
+        setUser(cachedSession?.user ?? null);
+
+        if (cachedSession?.user) {
+          const data = await fetchProfile(cachedSession.user.id);
           if (mounted) {
             if (data) {
               setProfile(data);
-              console.log("[UserContext] Profile state set.");
+              console.log("[UserContext] Initial profile loaded. credits=", data.credits, "streak=", data.current_streak);
             } else {
-              console.warn("[UserContext] No data returned from fetchProfile.");
+              console.warn("[UserContext] Initial fetchProfile returned null.");
             }
             setLoading(false);
           }
-        } catch (err) {
-          console.error("[UserContext] Profile fetch error:", err);
+        } else {
+          console.log("[UserContext] No cached session. User is logged out.");
           if (mounted) setLoading(false);
         }
-      } else {
-        console.log("[UserContext] No user in session. Clearing profile.");
-        setProfile(null);
+      } catch (err) {
+        console.error("[UserContext] Eager init error:", err);
         if (mounted) setLoading(false);
       }
     };
 
+    initSession();
+
+    // Phase 2: Subscribe to auth changes for subsequent events (sign-in, sign-out, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, currentSession: Session | null) => {
         if (!mounted) return;
         console.log(`[UserContext] Auth Event: ${event}`, { hasSession: !!currentSession });
+
+        // Skip TOKEN_REFRESHED — session is unchanged, no need to re-fetch profile
         if (event === 'TOKEN_REFRESHED') return;
-        await handleSession(currentSession);
+        // Skip INITIAL_SESSION — we already handled it eagerly above
+        if (event === 'INITIAL_SESSION') return;
+
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+        if (currentSession?.user) {
+          console.log(`[UserContext] Auth change: fetching profile for ${currentSession.user.id}`);
+          const data = await fetchProfile(currentSession.user.id);
+          if (mounted && data) {
+            setProfile(data);
+            console.log("[UserContext] Profile updated from auth change. credits=", data.credits);
+          }
+        } else {
+          console.log("[UserContext] Auth change: user signed out. Clearing profile.");
+          setProfile(null);
+        }
       }
     );
-
-    // Safety net: if onAuthStateChange hasn't delivered a session after 1.5s,
-    // manually check. This handles the case where the Supabase singleton's
-    // internal state is stale (e.g. after logout→re-login without full reload).
-    const fallbackTimer = setTimeout(async () => {
-      if (!mounted || hasReceivedSession) return;
-      console.log("[UserContext] Fallback: No auth event received. Manually checking session...");
-      try {
-        const { data: { session: manualSession } } = await supabase.auth.getSession();
-        console.log("[UserContext] Fallback getSession result:", { hasSession: !!manualSession });
-        if (!hasReceivedSession && mounted) {
-          await handleSession(manualSession);
-        }
-      } catch (err) {
-        console.error("[UserContext] Fallback getSession error:", err);
-        if (mounted) setLoading(false);
-      }
-    }, 1500);
 
     return () => {
       console.log("[UserContext] Provider Unmounting.");
       mounted = false;
-      clearTimeout(fallbackTimer);
       subscription.unsubscribe();
     };
   }, []);
