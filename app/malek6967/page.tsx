@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Lock, LogOut, Check, Loader2, RefreshCw, X } from "lucide-react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 // Types
 interface PendingOrder {
@@ -41,6 +42,12 @@ interface Metrics {
     name: string;
     sessions: number;
     daysSinceLast: number;
+  }>;
+  dailyChartData: Array<{
+    date: string;
+    fullDate: string;
+    revenue: number;
+    newUsers: number;
   }>;
 }
 
@@ -368,6 +375,35 @@ export default function AdminPortalPage() {
                   </div>
                 </div>
               </div>
+
+              {/* REVENUE CHART */}
+              {metrics.dailyChartData && metrics.dailyChartData.length > 0 && (
+                <div className="mt-8 bg-white border-4 border-black shadow-[4px_4px_0px_#000] p-6 lg:p-8">
+                  <span className="text-xs text-neutral-400 font-black uppercase tracking-[0.2em] block mb-6">
+                    30-Day Trailing Revenue
+                  </span>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={metrics.dailyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#000" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#000" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888', fontWeight: 600 }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888', fontWeight: 600 }} dx={-10} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '0px', fontSize: '13px', fontWeight: 'bold' }}
+                          itemStyle={{ color: '#fff' }}
+                          cursor={{ stroke: '#000', strokeWidth: 1, strokeDasharray: '4 4' }}
+                        />
+                        <Area type="monotone" dataKey="revenue" stroke="#000" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* SECTION 2 - USERS */}
@@ -385,6 +421,35 @@ export default function AdminPortalPage() {
                 <MetricCard title="Users w/ 0 CR" value={metrics.usersZeroCredits} />
                 <MetricCard title="Avg CR (Paid)" value={Math.round(metrics.avgCreditsPaidUser)} suffix="CR" />
               </div>
+
+              {/* NEW USERS CHART */}
+              {metrics.dailyChartData && metrics.dailyChartData.length > 0 && (
+                <div className="mt-8 bg-white border-4 border-black shadow-[4px_4px_0px_#000] p-6 lg:p-8">
+                  <span className="text-xs text-neutral-400 font-black uppercase tracking-[0.2em] block mb-6">
+                    30-Day New Users
+                  </span>
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={metrics.dailyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#000" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#000" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888', fontWeight: 600 }} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888', fontWeight: 600 }} dx={-10} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '0px', fontSize: '13px', fontWeight: 'bold' }}
+                          itemStyle={{ color: '#fff' }}
+                          cursor={{ stroke: '#000', strokeWidth: 1, strokeDasharray: '4 4' }}
+                        />
+                        <Area type="step" dataKey="newUsers" stroke="#000" strokeWidth={4} fillOpacity={1} fill="url(#colorUsers)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* SECTION 3 - RETENTION */}

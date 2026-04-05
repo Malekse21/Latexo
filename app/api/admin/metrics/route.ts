@@ -68,6 +68,20 @@ export async function GET(request: NextRequest) {
     const packBreakdown: Record<string, number> = {};
     const paidUserIds = new Set<string>();
 
+    const dailyChartData: Array<{ date: string, fullDate: string, revenue: number, newUsers: number }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const localYMD = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const shortDisplay = `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleString('en-US', { month: 'short' })}`;
+      dailyChartData.push({
+        date: shortDisplay,
+        fullDate: localYMD,
+        revenue: 0,
+        newUsers: 0
+      });
+    }
+
     let totalUsers = 0;
     let newUsersToday = 0;
     let newUsersWeek = 0;
@@ -78,6 +92,13 @@ export async function GET(request: NextRequest) {
       if (p.credits === 0) usersZeroCredits++;
       if (p.created_at) {
         const createdDate = new Date(p.created_at);
+
+        const localYMD = `${createdDate.getFullYear()}-${String(createdDate.getMonth()+1).padStart(2,'0')}-${String(createdDate.getDate()).padStart(2,'0')}`;
+        const chartPoint = dailyChartData.find(point => point.fullDate === localYMD);
+        if (chartPoint) {
+          chartPoint.newUsers += 1;
+        }
+
         if (createdDate >= startOfToday) newUsersToday++;
         if (createdDate >= startOfWeek) newUsersWeek++;
       }
@@ -95,15 +116,18 @@ export async function GET(request: NextRequest) {
         completedCount++;
         if (order.user_id) paidUserIds.add(order.user_id);
         
-        // Track pack distribution (only for completed if we want actual sales, or all?)
-        // The prompt says "Which pack sells most" -> COMPLETED is best, but let's count all or completed.
-        // Let's count completely sold packs.
         const packId = order.pack_id || 'unknown';
         packBreakdown[packId] = (packBreakdown[packId] || 0) + 1;
 
         if (order.confirmed_at) {
           const confirmedDate = new Date(order.confirmed_at);
           
+          const localYMD = `${confirmedDate.getFullYear()}-${String(confirmedDate.getMonth()+1).padStart(2,'0')}-${String(confirmedDate.getDate()).padStart(2,'0')}`;
+          const chartPoint = dailyChartData.find(point => point.fullDate === localYMD);
+          if (chartPoint) {
+            chartPoint.revenue += amount;
+          }
+
           if (confirmedDate >= startOfToday) {
             revenueToday += amount;
           }
@@ -245,7 +269,8 @@ export async function GET(request: NextRequest) {
       avgSessionsPaidUser,
       usersActiveThisWeek,
       maxStreakAllTime,
-      dormantTopUsers
+      dormantTopUsers,
+      dailyChartData
     });
   } catch (err) {
     console.error('[admin/metrics] Unexpected error:', err);
