@@ -140,72 +140,83 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    console.log("[UserContext] Provider Mounted. Starting init.");
+    let profileLoaded = false; // Dedup flag — prevent redundant fetches from rapid events
+    console.log("[UserContext] ===== Provider Mounted. Starting auth listener =====");
 
-    // Phase 1: Eagerly load the session from cache/cookies (synchronous from Supabase's perspective)
-    const initSession = async () => {
+    const handleAuthEvent = async (event: AuthChangeEvent, currentSession: Session | null) => {
+      if (!mounted) return;
+
+      console.log(`[UserContext] Auth Event: "${event}"`, {
+        hasSession: !!currentSession,
+        userId: currentSession?.user?.id?.substring(0, 8) ?? "none",
+        tokenExpiry: currentSession?.expires_at 
+          ? new Date(currentSession.expires_at * 1000).toISOString() 
+          : "N/A",
+      });
+
+      // Skip TOKEN_REFRESHED — session user hasn't changed, profile is unchanged
+      if (event === 'TOKEN_REFRESHED') {
+        console.log("[UserContext] TOKEN_REFRESHED — skipping (profile unchanged)");
+        return;
+      }
+
+      // On SIGNED_OUT, clear everything
+      if (event === 'SIGNED_OUT' || !currentSession?.user) {
+        console.log("[UserContext] No session/signed out. Clearing state.");
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        profileLoaded = false;
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      // We have a valid session — update user/session state
+      setSession(currentSession);
+      setUser(currentSession.user);
+
+      // Dedup: if profile is already loaded for this user, don't re-fetch
+      // unless this is a SIGNED_IN event (which means new sign-in or page load)
+      if (profileLoaded && event !== 'SIGNED_IN') {
+        console.log(`[UserContext] Profile already loaded. Skipping fetch for event: "${event}"`);
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      // Fetch profile
       try {
-        const { data: { session: cachedSession } } = await supabase.auth.getSession();
-        console.log("[UserContext] Eager getSession result:", { hasSession: !!cachedSession });
+        console.log(`[UserContext] Fetching profile for user: ${currentSession.user.id}`);
+        const data = await fetchProfile(currentSession.user.id);
+        console.log(`[UserContext] fetchProfile result:`, {
+          success: !!data,
+          credits: data?.credits ?? "N/A",
+          streak: data?.current_streak ?? "N/A",
+          hasAvatar: !!data?.avatar_url,
+          fullName: data?.full_name ?? "N/A",
+        });
 
-        if (!mounted) return;
-
-        setSession(cachedSession);
-        setUser(cachedSession?.user ?? null);
-
-        if (cachedSession?.user) {
-          const data = await fetchProfile(cachedSession.user.id);
-          if (mounted) {
-            if (data) {
-              setProfile(data);
-              console.log("[UserContext] Initial profile loaded. credits=", data.credits, "streak=", data.current_streak);
-            } else {
-              console.warn("[UserContext] Initial fetchProfile returned null.");
-            }
-            setLoading(false);
+        if (mounted) {
+          if (data) {
+            setProfile(data);
+            profileLoaded = true;
+            console.log("[UserContext] ✅ Profile state SET. credits=%d streak=%d", data.credits, data.current_streak ?? 0);
+          } else {
+            console.warn("[UserContext] ⚠️ fetchProfile returned null — profile state NOT cleared (keeping previous).");
+            // IMPORTANT: Do NOT clear profile here. If we already have a profile,
+            // keep it. This prevents the "disappearing data" issue.
           }
-        } else {
-          console.log("[UserContext] No cached session. User is logged out.");
-          if (mounted) setLoading(false);
+          setLoading(false);
         }
       } catch (err) {
-        console.error("[UserContext] Eager init error:", err);
+        console.error("[UserContext] Profile fetch threw:", err);
         if (mounted) setLoading(false);
       }
     };
 
-    initSession();
-
-    // Phase 2: Subscribe to auth changes for subsequent events (sign-in, sign-out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, currentSession: Session | null) => {
-        if (!mounted) return;
-        console.log(`[UserContext] Auth Event: ${event}`, { hasSession: !!currentSession });
-
-        // Skip TOKEN_REFRESHED — session is unchanged, no need to re-fetch profile
-        if (event === 'TOKEN_REFRESHED') return;
-        // Skip INITIAL_SESSION — we already handled it eagerly above
-        if (event === 'INITIAL_SESSION') return;
-
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-
-        if (currentSession?.user) {
-          console.log(`[UserContext] Auth change: fetching profile for ${currentSession.user.id}`);
-          const data = await fetchProfile(currentSession.user.id);
-          if (mounted && data) {
-            setProfile(data);
-            console.log("[UserContext] Profile updated from auth change. credits=", data.credits);
-          }
-        } else {
-          console.log("[UserContext] Auth change: user signed out. Clearing profile.");
-          setProfile(null);
-        }
-      }
-    );
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthEvent);
 
     return () => {
-      console.log("[UserContext] Provider Unmounting.");
+      console.log("[UserContext] ===== Provider Unmounting =====");
       mounted = false;
       subscription.unsubscribe();
     };
