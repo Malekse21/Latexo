@@ -3,6 +3,29 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
   console.log(`[Middleware] -> Incoming Request: ${request.nextUrl.pathname}`);
+
+  // Maintenance mode check
+  const isMaintenanceMode = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === 'true'
+  const isMaintenanceRoute = request.nextUrl.pathname.startsWith('/maintenance')
+
+  // Exclude API routes from redirecting to a UI page to avoid HTML responses
+  // Instead, API routes should just return 503 Service Unavailable if needed, 
+  // but for simplicity we'll just ignore maintenance block for pure API background calls
+  // or we can block them too. Let's redirect everything for now or just pages.
+  if (isMaintenanceMode && !isMaintenanceRoute && !request.nextUrl.pathname.startsWith('/api')) {
+    console.log(`[Middleware] Maintenance mode active, redirecting to /maintenance`);
+    const url = request.nextUrl.clone()
+    url.pathname = '/maintenance'
+    return NextResponse.redirect(url)
+  }
+
+  // If maintenance mode is off but someone tries to view the maintenance page, redirect to home
+  if (!isMaintenanceMode && isMaintenanceRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })

@@ -623,6 +623,15 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         
         setRecognition(recog);
       }
+
+      // PRE-LOAD VOICES: Chrome Web Speech API bug workaround
+      // getVoices() is async on some platforms, triggering it early ensures it's populated for the simulation
+      if (window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.getVoices();
+        };
+      }
     }
     
     return () => {
@@ -754,9 +763,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         const pool = langMatched.length > 0 ? langMatched : voices;
 
         // Keywords to find female voices (for Souad)
-        const femaleKeywords = ['female', 'woman', 'zira', 'fiona', 'hazel', 'susan', 'amélie', 'hortense', 'denise', 'virginie', 'marie', 'céline', 'caroline', 'google uk english female', 'samantha', 'karen', 'moira', 'tessa', 'victoria', 'sara'];
+        const femaleKeywords = ['female', 'woman', 'zira', 'fiona', 'hazel', 'susan', 'amélie', 'hortense', 'denise', 'virginie', 'marie', 'céline', 'caroline', 'google uk english female', 'samantha', 'karen', 'moira', 'tessa', 'victoria', 'sara', 'julie', 'google français'];
         // Keywords to find male voices
-        const maleKeywords = ['male', 'man', 'david', 'mark', 'paul', 'thomas', 'daniel', 'james', 'george', 'google uk english male', 'alex', 'fred', 'tom', 'jacques', 'henri', 'nicolas', 'philippe'];
+        const maleKeywords = ['male', 'man', 'david', 'mark', 'paul', 'thomas', 'daniel', 'james', 'george', 'google uk english male', 'alex', 'fred', 'tom', 'jacques', 'henri', 'nicolas', 'philippe', 'claude'];
         
         const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
           for (const kw of keywords) {
