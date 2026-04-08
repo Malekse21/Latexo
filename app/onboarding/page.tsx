@@ -297,6 +297,7 @@ export default function OnboardingPage() {
           university: form.university,
           specialty: form.specialty,
           defense_date: form.defenseDate || null,
+          email: user.email,
         };
 
 

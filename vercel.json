@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/defense-followup",
+      "schedule": "0 19 * * *"
+    }
+  ]
+}
