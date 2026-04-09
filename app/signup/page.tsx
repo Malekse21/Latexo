@@ -205,8 +205,12 @@ function SignupContent() {
           </p>
         </motion.div>
 
-        <p className="absolute bottom-8 text-[10px] text-center text-zinc-400 max-w-xs">
-          By continuing, you agree to Latexo&apos;s Terms of Service and Privacy Policy.
+        <p className="absolute bottom-8 text-[10px] text-center text-zinc-400 max-w-xs leading-relaxed">
+          En continuant, vous acceptez les{" "}
+          <Link href="/terms" target="_blank" className="text-black font-bold hover:underline underline-offset-2 transition-colors">
+            Conditions d'Utilisation
+          </Link>{" "}
+          de Latexo.
         </p>
       </div>
     </div>
