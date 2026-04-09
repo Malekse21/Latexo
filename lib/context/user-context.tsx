@@ -87,7 +87,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (userId: string, retryOnNull = true): Promise<Profile | null> => {
     try {
-      console.log(`[UserContext] fetchProfile called for ${userId} (retry=${retryOnNull})`);
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
@@ -105,19 +104,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         );
 
         if (error.code === 'PGRST116') {
-          console.warn("[UserContext] Profile not found for user. Signing out...");
           await signOut();
         }
         return null;
       }
 
       if (!data && retryOnNull) {
-        console.warn("[UserContext] fetchProfile returned null. Retrying in 500ms...");
         await new Promise(resolve => setTimeout(resolve, 500));
         return fetchProfile(userId, false);
       }
-
-      console.log("[UserContext] fetchProfile result:", data ? "OK" : "null");
       return data;
     } catch (error: any) {
       // Silently ignore AbortError — React unmounted while fetch was in-flight
@@ -129,11 +124,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = React.useCallback(async () => {
     if (user) {
-      console.log("[UserContext] refreshProfile called for", user.id);
       const data = await fetchProfile(user.id, false);
       if (data) {
         setProfile(data);
-        console.log("[UserContext] refreshProfile: profile updated. credits=", data.credits, "streak=", data.current_streak);
       }
     }
   }, [user]);
@@ -145,30 +138,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // callback returns, but the query needs that lock.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    console.log("[UserContext] ===== Provider Mounted. Starting auth listener =====");
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, currentSession: Session | null) => {
-        console.log(`[UserContext] Auth Event: "${event}"`, {
-          hasSession: !!currentSession,
-          userId: currentSession?.user?.id?.substring(0, 8) ?? "none",
-          tokenExpiry: currentSession?.expires_at
-            ? new Date(currentSession.expires_at * 1000).toISOString()
-            : "N/A",
-        });
-
         // Skip TOKEN_REFRESHED — session user hasn't changed
         if (event === 'TOKEN_REFRESHED') {
-          console.log("[UserContext] TOKEN_REFRESHED — skipping");
           return;
         }
 
         if (currentSession?.user) {
           setSession(currentSession);
           setUser(currentSession.user);
-          console.log("[UserContext] User/session state updated from auth event.");
         } else {
-          console.log("[UserContext] No session — clearing all state.");
           setSession(null);
           setUser(null);
           setProfile(null);
@@ -178,7 +158,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => {
-      console.log("[UserContext] ===== Provider Unmounting =====");
       subscription.unsubscribe();
     };
   }, []);
@@ -189,33 +168,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
-      console.log("[UserContext] No user — skipping profile fetch.");
       return;
     }
 
     let cancelled = false;
-    console.log(`[UserContext] User changed → fetching profile for ${user.id}`);
-
     const loadProfile = async () => {
       const data = await fetchProfile(user.id);
       if (cancelled) {
-        console.log("[UserContext] Profile fetch completed but effect was cancelled.");
         return;
       }
-
-      console.log("[UserContext] fetchProfile result:", {
-        success: !!data,
-        credits: data?.credits ?? "N/A",
-        streak: data?.current_streak ?? "N/A",
-        hasAvatar: !!data?.avatar_url,
-        fullName: data?.full_name ?? "N/A",
-      });
-
       if (data) {
         setProfile(data);
-        console.log("[UserContext] ✅ Profile SET. credits=%d streak=%d", data.credits, data.current_streak ?? 0);
       } else {
-        console.warn("[UserContext] ⚠️ fetchProfile returned null — keeping previous profile.");
       }
       setLoading(false);
     };
@@ -228,10 +192,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]); // Only re-run when the actual user ID changes
 
   const signOut = React.useCallback(async () => {
-    console.log("[UserContext] signOut started");
     try {
       await supabase.auth.signOut();
-      console.log("[UserContext] supabase.auth.signOut() SUCCESS");
     } catch (err) {
       console.error("[UserContext] Supabase signOut error:", err);
     }
@@ -244,12 +206,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     // which destroys Supabase's internal auth state in the singleton client
     try {
       localStorage.removeItem('latexo-app-storage');
-      console.log("[UserContext] App storage cleared");
     } catch (e) {
       // silent
     }
-
-    console.log("[UserContext] Redirecting to '/'");
     router.push("/");
     router.refresh();
   }, [router, supabase]);

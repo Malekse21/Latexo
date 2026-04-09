@@ -5,6 +5,9 @@ import { GeneratedQuestion } from "@/src/types/session";
 import { LiveSession } from "@/src/types/session";
 import { AGENTS } from "@/src/config/agents";
 import { logGroqCost } from "@/src/config/groq";
+import { checkChatRateLimit } from "@/lib/rate-limit-chat";
+
+export const maxDuration = 60;
 
 // ── Agent-ID ↔ Speaker mapping ──────────────────────────────
 const AGENT_TO_SPEAKER: Record<number, string> = {
@@ -146,6 +149,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rateLimit = checkChatRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Please wait ${rateLimit.retryAfter} seconds.` },
+        { status: 429 }
+      );
+    }
+
     // ── Parse body ────────────────────────────────────────
     const body: ChatRequest = await request.json();
     const {
@@ -158,6 +169,14 @@ export async function POST(request: NextRequest) {
     if (!student_message || !language || !difficulty) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // LLM Token Limiting Check
+    if (student_message.length > 4000) {
+      return NextResponse.json(
+        { error: "Message too long. Maximum 4000 characters limit exceeded." },
         { status: 400 }
       );
     }
@@ -240,7 +259,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
             { role: "user", content: userPrompt },
           ],
           temperature: 0.5,
-          max_tokens: 500,
+          max_tokens: 1024,
           response_format: { type: "json_object" },
         }),
       }
@@ -259,7 +278,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
     }
 
     if (!content) {
-      console.error("Groq returned empty content", aiData);
+      console.error("Groq returned empty content (payload omitted for privacy)");
       throw new Error("No content received from AI");
     }
 
@@ -281,7 +300,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
     try {
       aiResponse = JSON.parse(content);
     } catch (parseError) {
-      console.error("Failed to parse AI JSON:", content);
+      console.error("Failed to parse AI JSON (payload omitted for privacy)");
       aiResponse = {};
     }
 

@@ -50,7 +50,6 @@ export function WaitingConfirmation() {
           const data = await res.json();
           if (data.status === 'COMPLETED') {
             if (pollRef.current) clearInterval(pollRef.current);
-            console.log('[WaitingConfirmation] Payment COMPLETED. Refreshing profile...');
             await refreshProfile();
             goTo('success');
             return;

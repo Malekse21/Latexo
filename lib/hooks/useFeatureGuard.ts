@@ -23,7 +23,6 @@ export function useFeatureGuard(options: GuardOptions = {}) {
     // We check both the store (client selection) and strict profile active_report_id if needed
     // For now, let's rely on the store as the user specifically requested "selectedPDF is null in the store"
     if (requireReport && !selectedReport) {
-      console.warn("Feature Guard: No report selected. Redirecting to dashboard.");
       // Ideally trigger a toast here
       router.push('/dashboard');
       return;
@@ -31,7 +30,6 @@ export function useFeatureGuard(options: GuardOptions = {}) {
 
     // 2. Check Credits
     if (cost > 0 && (profile?.credits || 0) < cost) {
-      console.warn("Feature Guard: Insufficient credits.");
       // In a real app, this would open the modal via query param or store action
       // router.push('?modal=buy-credits'); 
     }

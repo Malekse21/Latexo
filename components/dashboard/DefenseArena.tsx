@@ -390,15 +390,12 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Caps at step 3 (last jury card). Step 4 is set by the unified transition effect below.
   useEffect(() => {
     if (phase === "loading") {
-      console.log('[Loading] Phase entered, starting step ticker from 0');
       const interval = setInterval(() => {
         setLoadingStep((prev) => {
           if (prev >= 3) {
             clearInterval(interval);
-            console.log('[Loading] Step ticker capped at 3, waiting for initialData');
             return prev; // Stay at 3 — don't go to 4 yet
           }
-          console.log('[Loading] Step ticker:', prev, '->', prev + 1);
           return prev + 1;
         });
       }, 2500);
@@ -414,9 +411,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // This handles both orderings: data-before-step3 and data-after-step3.
   useEffect(() => {
     if (phase === "loading" && loadingStep >= 3 && initialData && loadingStep < 4) {
-      console.log('[Loading] Both conditions met (step=%d, initialData=%s). Scheduling step 4 in 2.5s...', loadingStep, !!initialData);
       const timer = setTimeout(() => {
-        console.log('[Loading] Advancing to step 4 now');
         setLoadingStep(4);
       }, 2500);
       return () => clearTimeout(timer);
@@ -519,7 +514,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Transition to Arena when ready (step 4 = all jury shown, safe to proceed)
   useEffect(() => {
     if (phase === "loading" && loadingStep === 4 && initialData) {
-      console.log('[Arena Transition] Step 4 reached with initialData. Entering arena NOW.');
       const { firstJuryMessage, sessionFirstQuestion, sessionAgentId } = initialData;
 
       // Clear initial data FIRST to prevent re-triggering on subsequent renders
@@ -529,8 +523,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       setTimeRemaining(config.duration * 60);
       setSessionStartTime(Date.now());
       setPhase("arena");
-      console.log('[Arena Transition] Phase set to arena, timeRemaining =', config.duration * 60);
-
       // Determine the first dynamic question's speaker
       const AGENT_TO_SPEAKER: Record<number, "technical" | "academic" | "business"> = {
         0: "technical",
@@ -652,20 +644,13 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
 
     setIsProcessing(true);
-    console.log('[Init] handleInitialize called. credits=%d, cost=%d', profile.credits, currentCost);
-
     try {
       setPhase("loading");
-      console.log('[Init] Phase set to loading');
-
       const finalReportId = reportId || profile?.active_report_id;
       
       if (!finalReportId) {
         throw new Error("No active report selected. Please upload or select a report first.");
       }
-
-      console.log("🚀 [Init] Calling /api/simulation/initialize for report:", finalReportId);
-
       // Step 1: Generate skeleton + first jury greeting
       const response = await fetch("/api/simulation/initialize", {
         method: "POST",
@@ -684,10 +669,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }
 
       const data = await response.json();
-      console.log('[Init] Initialize API success. firstJuryMessage:', data.firstJuryMessage?.text?.substring(0, 40));
-
       // Step 2: Create the live session (question bank, session state, credit deduction)
-      console.log('[Init] Calling /api/sessions/start...');
       const sessionRes = await fetch("/api/sessions/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -705,18 +687,13 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }
 
       const sessionData = await sessionRes.json();
-      console.log("✅ [Init] Live session created:", sessionData.sessionId, 'firstQuestion:', sessionData.firstQuestion?.substring(0, 40));
-
       // Merge session data (firstQuestion, agentId) into initialData so the transition effect can use it
       setInitialData({
         ...data,
         sessionFirstQuestion: sessionData.firstQuestion,
         sessionAgentId: sessionData.agentId,
       });
-      console.log('[Init] initialData SET. Waiting for loadingStep to reach 3+...');
-
       refreshProfile().then(() => {
-        console.log('[Init] Profile refreshed.');
       }).catch((err) => {
         console.error('[Init] Failed to refresh profile:', err);
       });
@@ -822,7 +799,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       const safetyTimeoutMs = estimatedDurationMs + 5000; // Add 5 seconds buffer
 
       const safetyTimer = setTimeout(() => {
-        console.warn("SpeechSynthesis onend failed to fire. Using safety fallback.");
         finish();
       }, safetyTimeoutMs);
 
@@ -872,12 +848,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   const handleClosingPhase = async () => {
     // Guard against double-invocation from rapid timer ticks
     if (isClosingRef.current) {
-      console.log('[Closing] Already closing, skipping duplicate call');
       return;
     }
     isClosingRef.current = true;
-    console.log('[Closing] handleClosingPhase fired. messages count =', messagesRef.current.length);
-
     // Stop any recording
     if (recognition) recognition.stop();
     if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -911,7 +884,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
     // Fire evaluation after a fixed delay (enough for farewell to display)
     // This is decoupled from the speech callback to prevent silent failures
-    console.log('[Closing] Scheduling runEvaluation in 4s...');
     setTimeout(() => runEvaluation(), 4000);
   };
 
@@ -922,15 +894,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   const runEvaluation = async () => {
     // Guard against double-evaluation
     if (isEvaluatingRef.current) {
-      console.log('[Eval] Already evaluating, skipping duplicate call');
       return;
     }
     isEvaluatingRef.current = true;
-    console.log('[Eval] runEvaluation started. transcript length =', messagesRef.current.length);
-
     setIsEvaluating(true);
     try {
-      console.log('[Eval] Calling /api/simulation/evaluate...');
       const response = await fetch("/api/simulation/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -952,15 +920,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }
 
       const data = await response.json();
-      console.log('[Eval] API success. simulation_id =', data.simulation_id, 'grade =', data.final_grade);
-      
       // Refresh profile to pick up updated streak + credits in the navbar
-      console.log('[Eval] Refreshing profile to sync streak/credits...');
       await refreshProfile();
       
       setEvaluationResults(data);
       setPhase("aftermath");
-      console.log('[Eval] Phase set to aftermath. Waiting for effect to call onSimulationComplete...');
     } catch (error) {
       console.error("[Eval] Failed to evaluate simulation:", error);
       setAlertModal({ 
@@ -978,11 +942,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
   // Aftermath: trigger tab switch to AftermathDashboard via proper useEffect (not IIFE in JSX)
   useEffect(() => {
-    console.log('[Aftermath Effect] phase=%s, simulation_id=%s', phase, evaluationResults?.simulation_id);
     if (phase === 'aftermath' && evaluationResults?.simulation_id) {
-      console.log('[Aftermath Effect] Conditions met! Calling router in 1.2s with simId =', evaluationResults.simulation_id);
       const timer = setTimeout(() => {
-        console.log('[Aftermath Effect] Firing router.push NOW');
         router.push(`${pathname}?tab=aftermath&simId=${evaluationResults.simulation_id}`);
       }, 1200);
       return () => clearTimeout(timer);
@@ -1099,11 +1060,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   };
 
   const handleMicClick = async () => {
-    console.log("🎤 Mic clicked, isRecording:", isRecording);
-    
     if (isRecording) {
       // Stop recording manually
-      console.log("⏹️ Stopping recording...");
       playSoundEffect('click');
       setIsRecording(false);
       setActiveSpeaker(null);
@@ -1135,8 +1093,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }
     } else {
       // Start recording
-      console.log("▶️ Starting recording...");
-      
       try {
         playSoundEffect('pop');
         setTranscript('Listening...');
@@ -1639,7 +1595,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               animate={{ opacity: 1 }}
               transition={{ delay: 2 }}
               onClick={() => {
-                console.log('[Loading] Skip intro clicked. Jumping to step 3. initialData =', !!initialData);
                 setLoadingStep(3);
               }}
               className="absolute bottom-6 right-6 text-[10px] uppercase tracking-widest text-gray-400 hover:text-black border border-gray-300 hover:border-black px-3 py-1.5 transition-colors"

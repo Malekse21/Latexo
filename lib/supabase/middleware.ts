@@ -2,8 +2,6 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
-  console.log(`[Middleware] -> Incoming Request: ${request.nextUrl.pathname}`);
-
   // Maintenance mode check
   const isMaintenanceMode = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === 'true'
   const isMaintenanceRoute = request.nextUrl.pathname.startsWith('/maintenance')
@@ -13,7 +11,6 @@ export async function updateSession(request: NextRequest) {
   // but for simplicity we'll just ignore maintenance block for pure API background calls
   // or we can block them too. Let's redirect everything for now or just pages.
   if (isMaintenanceMode && !isMaintenanceRoute && !request.nextUrl.pathname.startsWith('/api')) {
-    console.log(`[Middleware] Maintenance mode active, redirecting to /maintenance`);
     const url = request.nextUrl.clone()
     url.pathname = '/maintenance'
     return NextResponse.redirect(url)
@@ -61,8 +58,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  console.log(`[Middleware] Auth check complete. User exists: ${!!user}`);
-
   // Protected routes logic
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
                       request.nextUrl.pathname.startsWith('/signup') ||
@@ -91,7 +86,6 @@ export async function updateSession(request: NextRequest) {
 
   // If user is not logged in and tries to access protected routes
   if (!user && (isDashboardRoute || isOnboardingRoute)) {
-    console.log(`[Middleware] blocked unauthenticated request to ${request.nextUrl.pathname}. Redirecting to /login`);
     return createRedirect('/login')
   }
 
@@ -105,8 +99,6 @@ export async function updateSession(request: NextRequest) {
       .single()
       
     const isProfileComplete = profile && profile.university
-    console.log(`[Middleware] User is authenticated. Profile complete: ${!!isProfileComplete}`);
-
     // 1. If hitting login/signup OR root, redirect to appropriate start page
     if (isAuthRoute || isRootRoute) {
       if (isAuthRoute && request.nextUrl.pathname.startsWith('/auth/callback')) {
@@ -125,13 +117,9 @@ export async function updateSession(request: NextRequest) {
     // 3. If hitting onboarding but profile ALREADY complete, force dashboard
     if (isOnboardingRoute) {
       if (isProfileComplete) {
-        console.log(`[Middleware] User is already onboarded. Redirecting to /dashboard`);
         return createRedirect('/dashboard')
       }
     }
   }
-
-  console.log(`[Middleware] Allowed request to proceed: ${request.nextUrl.pathname}`);
-
   return supabaseResponse
 }

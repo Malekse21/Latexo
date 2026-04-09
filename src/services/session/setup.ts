@@ -41,7 +41,6 @@ export async function startSession(
     }
     // Delete the Redis/Live block
     await deleteSession(userId);
-    console.log(`Cleared stale session for user ${userId}. Starting fresh.`);
   }
 
   // ── Step 2: Check and deduct credits ──────────────────

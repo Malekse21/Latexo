@@ -30,10 +30,6 @@ export function logGroqCost(
   // Formatting for clean console output
   const usdFmt = totalUsd < 0.0001 ? '<$0.0001' : `$${totalUsd.toFixed(4)}`;
   const tndFmt = totalTnd < 0.0001 ? '<0.0001 TND' : `${totalTnd.toFixed(4)} TND`;
-
-  console.log(
-    `[💰 GROQ: ${actionName}] Model: ${modelName} | Tokens: ${promptTokens}in / ${completionTokens}out | Cost: ${usdFmt} (~${tndFmt})`
-  );
 }
 
 export interface GroqChatMessage {

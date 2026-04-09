@@ -5,9 +5,6 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  
-  console.log("=== AUTH CALLBACK INITIATED ===", { url: request.url, origin, code: !!code });
-
   if (code) {
     const cookieStore = await cookies()
     
@@ -31,22 +28,9 @@ export async function GET(request: Request) {
     )
 
     const { error: exchangeError, data: sessionData } = await supabase.auth.exchangeCodeForSession(code)
-    
-    console.log("=== EXCHANGE CODE RESULT ===", { 
-      error: exchangeError?.message,
-      errorStatus: (exchangeError as any)?.status,
-      hasSession: !!sessionData?.session 
-    });
-
     if (!exchangeError) {
       // ── Determine where the user should go ──
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      console.log("=== GET USER RESULT ===", { 
-        userId: user?.id, 
-        userError: userError?.message 
-      });
-
       let destination = '/dashboard'
       
       if (user) {
@@ -61,9 +45,6 @@ export async function GET(request: Request) {
           destination = '/onboarding'
         }
       }
-
-      console.log(`=== REDIRECTING TO ${destination} ===`);
-
       // Use the origin from the request URL to stay on the same domain
       return NextResponse.redirect(new URL(destination, origin))
     }
@@ -74,7 +55,5 @@ export async function GET(request: Request) {
       new URL(`/login?error=auth_callback_error&detail=${encodeURIComponent(exchangeError?.message || 'unknown')}`, origin)
     )
   }
-
-  console.log("=== AUTH CALLBACK FAILED - NO CODE ===");
   return NextResponse.redirect(new URL('/login?error=auth_callback_error&detail=no_code', request.url))
 }

@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkUploadRateLimit } from '@/lib/rate-limit-upload';
 
-// Allow large payloads (file binary + extracted text) and longer execution
-export const config = {
-  api: {
-    bodyParser: false, // FormData handles its own parsing
-  },
-};
 export const maxDuration = 60; // seconds (Vercel Pro limit)
 
 /**
@@ -98,6 +93,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Rate Limit Check
+    const rateLimit = checkUploadRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many uploads. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      );
+    }
+
+    // Payload Size Limit: Reject payloads larger than 10MB
+    const contentLength = request.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'Payload too large. Maximum upload size is 10MB.' },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const thumbnail = formData.get('thumbnail') as File | null;
@@ -160,7 +173,7 @@ export async function POST(request: NextRequest) {
       .from('pfes')
       .upload(filePath, file, {
         upsert: true,
-        contentType: file.type || 'application/octet-stream',
+        contentType: 'application/octet-stream',
       });
 
     if (pdfUploadError) {
