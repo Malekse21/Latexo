@@ -1,0 +1,17 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every 5 days.
+    - cron: '0 0 */5 * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions tab
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database Activity
+        run: |
+          curl -i -X GET "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}/rest/v1/?limit=1" \
+          -H "apikey: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}"
