@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import Image from "next/image";
+import Link from "next/link";
+
 
 export default function HeroV2() {
   return (
@@ -39,9 +41,12 @@ export default function HeroV2() {
         >
           <Button 
             size="lg" 
+            asChild
             className="bg-black text-white hover:bg-neutral-800 text-lg px-8 py-6 h-auto rounded-none shadow-[4px_4px_0px_#000000] border border-black transition-transform active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
           >
-            Enter the Arena <ArrowRight className="ml-2 h-5 w-5" />
+            <Link href="/signup">
+              Enter the Arena <ArrowRight className="ml-2 h-5 w-5" />
+            </Link>
           </Button>
         </motion.div>
       </div>

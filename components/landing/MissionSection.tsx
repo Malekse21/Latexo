@@ -37,7 +37,7 @@ export default function MissionSection() {
                 Your Path to<br/>Excellence
             </h2>
             <p className="text-neutral-600 font-medium">
-                A military-grade training protocol designed for academic survival.
+                A training protocol designed for academic survival.
             </p>
         </div>
 
@@ -70,11 +70,6 @@ export default function MissionSection() {
                         <p className="text-sm font-medium text-neutral-600 leading-relaxed">
                             {step.description}
                         </p>
-
-                        {/* Fake functional UI element */}
-                        <div className="mt-8 pt-4 border-t-2 border-neutral-100 flex items-center text-xs font-bold uppercase tracking-widest text-black">
-                             <span>Initialize</span> <ArrowRight className="w-3 h-3 ml-2 group-hover:translate-x-1 transition-transform" />
-                        </div>
                     </div>
                 </motion.div>
             ))}
