@@ -127,9 +127,9 @@ export default function FeaturesGridSection() {
             {/* Mini Visual: Fake leaderboard rows */}
             <div className="mt-5 space-y-0 border border-neutral-200 bg-neutral-50 divide-y divide-neutral-200">
               {[
-                { rank: "🥇", name: "You", score: "18.5", highlight: false },
+                { rank: "🥇", name: "You", score: "18.5", highlight: true },
                 { rank: "🥈", name: "Sandra A.", score: "17.2", highlight: false },
-                { rank: "🥉", name: "Amine B.", score: "16.8", highlight: true },
+                { rank: "🥉", name: "Malek S.", score: "16.8", highlight: false },
               ].map((entry, i) => (
                 <div
                   key={i}
