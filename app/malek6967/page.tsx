@@ -188,7 +188,6 @@ export default function AdminPortalPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur lors de la confirmation.");
 
-      // Remove confirmed order from list and refresh metrics instead of just filtering
       // since the metrics data needs to update (e.g. Revenue Today goes up, Pending Value goes down)
       fetchOrders();
     } catch (err: any) {
