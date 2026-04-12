@@ -166,7 +166,7 @@
     "try_again": "Try Again",
     "step_validating": "Validating file",
     "step_extracting": "Extracting text & thumbnail",
-    "step_uploading": "Uploading to cloud",
+    "step_uploading": "Uploading PDF",
     "step_saving": "Saving report",
     "msg_checking": "Checking file...",
     "msg_scanning": "Scanning your document...",

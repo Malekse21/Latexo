@@ -163,10 +163,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-  
+
   // Voice state (Native Browser APIs)
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [liveCaption, setLiveCaption] = useState("");
+  const liveCaptionRef = useRef("");
   const [recognition, setRecognition] = useState<any>(null);
   const [initialData, setInitialData] = useState<any>(null);
   const [evaluationResults, setEvaluationResults] = useState<any>(null);
@@ -198,6 +199,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // SFX & ambiance state
   const [sfxEvent, setSfxEvent] = useState<{ juror: ActiveSpeaker; emoji: string } | null>(null);
   const ambianceRef = useRef<HTMLAudioElement | null>(null);
+
+  // Keep liveCaptionRef always in sync (avoids stale closures in handleMicClick)
+  useEffect(() => {
+    liveCaptionRef.current = liveCaption;
+  }, [liveCaption]);
 
   // Track the last jury speaker so we know who to show the bubble on
   useEffect(() => {
@@ -1072,7 +1078,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         // but to keep it simple and immediate, we can just grab what we have.
         // To ensure we get the last bit, we'll wait a tiny bit for the final onresult.
         setTimeout(async () => {
-          const text = liveCaption.trim();
+          const text = liveCaptionRef.current.trim();
           if (text.length > 0) {
             // Add student message to history
             const studentMessage: TranscriptMessage = {

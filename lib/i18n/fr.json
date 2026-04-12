@@ -166,7 +166,7 @@
     "try_again": "Réessayer",
     "step_validating": "Validation du fichier",
     "step_extracting": "Extraction du texte et miniature",
-    "step_uploading": "Envoi vers le cloud",
+    "step_uploading": "Téléchargement du PDF",
     "step_saving": "Enregistrement du rapport",
     "msg_checking": "Vérification du fichier...",
     "msg_scanning": "Analyse de votre document...",

@@ -162,7 +162,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
       setUploadStatus({
         status: "processing",
         currentStep: 2,
-        message: t("upload.step_uploading") || "Uploading to cloud...",
+        message: t("upload.step_uploading") || "Uploading PDF...",
       });
 
       const formData = new FormData();
