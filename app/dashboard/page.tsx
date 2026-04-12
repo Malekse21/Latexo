@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
-import { CardsView } from "@/components/dashboard/CardsView";
-import { DefenseArena } from "@/components/dashboard/DefenseArena";
-import { AftermathDashboard } from "@/components/dashboard/AftermathDashboard";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import type { DashboardProfile, DashboardReport, ReadinessData } from "@/lib/types/dashboard";
 import { getSessionVolume, getRecencyScore, computeReadiness } from "@/lib/types/dashboard";
 import { differenceInDays } from "date-fns";
@@ -164,18 +161,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   let aftermathSim = null;
   let aftermathLastScore = null;
 
-  if (tab === "aftermath") {
+  if (simId) {
     // Poll on the server to handle the Postgres replication lag cleanly BEFORE the client renders!
     let attempts = 0;
     const maxAttempts = 5;
     while (attempts < maxAttempts) {
-      if (simId) {
-        const { data } = await supabase.from('simulations').select('*').eq('id', simId).maybeSingle();
-        aftermathSim = data;
-      } else {
-        const { data } = await supabase.from('simulations').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
-        aftermathSim = data;
-      }
+      const { data } = await supabase.from('simulations').select('*').eq('id', simId).maybeSingle();
+      aftermathSim = data;
 
       if (aftermathSim) break;
       
@@ -183,55 +175,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       await new Promise(res => setTimeout(res, 1000));
       attempts++;
     }
+  } else {
+    const { data } = await supabase.from('simulations').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    aftermathSim = data;
+  }
 
-    if (aftermathSim) {
-      const { data: prevSims } = await supabase
-        .from("simulations")
-        .select("final_grade")
-        .eq("user_id", user.id)
-        .lt("created_at", aftermathSim.created_at)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (prevSims && prevSims.length > 0) {
-        aftermathLastScore = prevSims[0].final_grade;
-      }
+  if (aftermathSim) {
+    const { data: prevSims } = await supabase
+      .from("simulations")
+      .select("final_grade")
+      .eq("user_id", user.id)
+      .lt("created_at", aftermathSim.created_at)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (prevSims && prevSims.length > 0) {
+      aftermathLastScore = prevSims[0].final_grade;
     }
   }
 
   return (
-    <div className="space-y-4 pt-4">
-      {/* Sub-Nav (Tabs) */}
-      <DashboardTabs activeTab={tab} />
-
-      {/* Tab Content */}
-      {tab === "briefing" && (
-        <CardsView
-          profile={profile as DashboardProfile}
-          activeReport={activeReport}
-          daysUntilDefense={daysUntilDefense}
-          readinessScore={readiness.readinessScore}
-          projectedScore={readiness.projectedScore}
-          lastGrade={readiness.lastGrade}
-          memorySnapshot={readiness.memorySnapshot}
-        />
-      )}
-
-      {tab === "defense" && (
-        <div className="h-[calc(100vh-140px)]">
-          <DefenseArena
-            reportId={activeReport?.id}
-            initialLanguage={
-              (activeReport?.language as "french" | "english" | "mixed") || "french"
-            }
-          />
-        </div>
-      )}
-
-      {tab === "aftermath" && (
-        <div className="h-[calc(100vh-140px)]">
-          <AftermathDashboard simulationData={aftermathSim} lastScoreData={aftermathLastScore} />
-        </div>
-      )}
-    </div>
+    <DashboardShell
+      profile={profile as DashboardProfile}
+      activeReport={activeReport}
+      daysUntilDefense={daysUntilDefense}
+      readiness={readiness}
+      initialTab={tab}
+      aftermathSim={aftermathSim}
+      aftermathLastScore={aftermathLastScore}
+    />
   );
 }

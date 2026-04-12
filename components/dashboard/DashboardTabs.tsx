@@ -2,25 +2,15 @@
 
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { useRouter, usePathname } from "next/navigation";
 import { useUser } from "@/lib/context/user-context";
 
 export interface DashboardTabsProps {
   activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
-export function DashboardTabs({ activeTab }: DashboardTabsProps) {
-  const router = useRouter();
-  const pathname = usePathname();
+export function DashboardTabs({ activeTab, onTabChange }: DashboardTabsProps) {
   const { t } = useUser();
-
-  const handleTabChange = (newTab: string) => {
-    if (newTab === "briefing") {
-      router.push(pathname);
-    } else {
-      router.push(`${pathname}?tab=${newTab}`);
-    }
-  };
 
   const tabs = [
     { id: 'briefing', label: t('dashboard.tabs.briefing') },
@@ -36,9 +26,9 @@ export function DashboardTabs({ activeTab }: DashboardTabsProps) {
           return (
             <button
               key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
+              onClick={() => onTabChange(tab.id)}
               className={cn(
-                "relative pb-3 px-2 text-[10px] md:text-sm uppercase tracking-widest transition-colors whitespace-nowrap",
+                "relative pb-3 px-2 text-[10px] md:text-sm uppercase tracking-widest transition-colors whitespace-nowrap cursor-pointer",
                 isActive 
                   ? "font-bold text-black" 
                   : "text-gray-400 hover:text-gray-600"
