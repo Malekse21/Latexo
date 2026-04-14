@@ -190,6 +190,23 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   const [isPaused, setIsPaused] = useState(false);
   const [liveSimulations, setLiveSimulations] = useState(0);
 
+  // New Mic Test state
+  const [micStatus, setMicStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+
+  const testMicrophone = async () => {
+    setMicStatus('testing');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      setMicStatus('success');
+      setTimeout(() => setMicStatus('idle'), 3000);
+    } catch (err) {
+      console.error("Mic error:", err);
+      setMicStatus('error');
+      setTimeout(() => setMicStatus('idle'), 3000);
+    }
+  };
+
   // Silence counter state
   const [lastJurySpeaker, setLastJurySpeaker] = useState<ActiveSpeaker>(null);
   const [silenceSeconds, setSilenceSeconds] = useState(0);
@@ -1380,11 +1397,44 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                       })}
                     </div>
                     
-                    <div className="mt-4 flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
-                      <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
-                      <span className="text-[11px] font-semibold uppercase tracking-wider">
-                        {t('simulation.chrome_optimized')}
-                      </span>
+                    <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                      <div className="flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
+                        <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                          {t('simulation.chrome_optimized')}
+                        </span>
+                      </div>
+                      
+                      <button 
+                        onClick={(e) => { e.preventDefault(); testMicrophone(); }}
+                        disabled={micStatus === 'testing'}
+                        className={`flex-1 flex items-center justify-center gap-3 p-3 rounded-xl border shadow-sm transition-colors ${
+                          micStatus === 'success' 
+                            ? 'bg-green-50 border-green-200 text-green-700' 
+                            : micStatus === 'error'
+                            ? 'bg-red-50 border-red-200 text-red-700'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {micStatus === 'testing' ? (
+                          <Loader2 className="w-4 h-4 shrink-0 animate-spin text-gray-900" />
+                        ) : micStatus === 'success' ? (
+                          <Mic className="w-4 h-4 shrink-0 text-green-600" />
+                        ) : micStatus === 'error' ? (
+                          <Mic className="w-4 h-4 shrink-0 text-red-600" />
+                        ) : (
+                          <Mic className="w-4 h-4 shrink-0 text-gray-900" />
+                        )}
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                          {micStatus === 'testing' 
+                            ? t('common.loading') 
+                            : micStatus === 'success'
+                            ? (config.language === 'french' ? "Micro OK" : "Mic Ready")
+                            : micStatus === 'error'
+                            ? (config.language === 'french' ? "Micro Refusé" : "Mic Denied")
+                            : (config.language === 'french' ? "Tester le micro" : "Test Mic")}
+                        </span>
+                      </button>
                     </div>
                   </div>
 
