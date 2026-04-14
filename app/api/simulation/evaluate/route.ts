@@ -90,7 +90,7 @@ Output Format (Strict JSON only, no markdown, no explanation):
   "proficiency": { "tech": <0-100>, "acad": <0-100>, "biz": <0-100> },
   "jury_feedback": {
     "tech": { "comment": "...", "tip": "..." },
-    "strict": { "comment": "...", "tip": "..." },
+    "academic": { "comment": "...", "tip": "..." },
     "business": { "comment": "...", "tip": "..." }
   },
   "memory_update": "..."
@@ -152,8 +152,8 @@ Output Format (Strict JSON only, no markdown, no explanation):
         tip: parsed.jury_feedback?.tech?.tip || "No tip available.",
       },
       strict: {
-        comment: parsed.jury_feedback?.strict?.comment || "No comment available.",
-        tip: parsed.jury_feedback?.strict?.tip || "No tip available.",
+        comment: parsed.jury_feedback?.academic?.comment || parsed.jury_feedback?.strict?.comment || "No comment available.",
+        tip: parsed.jury_feedback?.academic?.tip || parsed.jury_feedback?.strict?.tip || "No tip available.",
       },
       business: {
         comment: parsed.jury_feedback?.business?.comment || "No comment available.",

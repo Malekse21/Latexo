@@ -156,6 +156,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   const closingPhaseRef = useRef<() => void>(() => {});
   const isClosingRef = useRef(false);
   const isEvaluatingRef = useRef(false);
+  const typewriterIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState(0);
   const [isEvaluating, setIsEvaluating] = useState(false);
 
@@ -880,6 +881,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     // Stop any recording
     if (recognition) recognition.stop();
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    // Kill any active typewriter interval so it can't overwrite the closing text
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
+    }
     setIsRecording(false);
     setActiveSpeaker(null);
 
@@ -996,6 +1002,12 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
   // Typewriter effect for jury responses (synchronized with speaking rate)
   const typewriterEffect = (text: string, speakerProfKey?: string) => {
+    // Clear any previous typewriter interval to prevent text bleed
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
+    }
+
     const words = text.split(' ');
     let displayed = '';
     let index = 0;
@@ -1012,12 +1024,16 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     const interval = setInterval(() => {
       if (index >= words.length) {
         clearInterval(interval);
+        typewriterIntervalRef.current = null;
         return;
       }
       displayed += (index > 0 ? ' ' : '') + words[index];
       setTranscript(displayed);
       index++;
-    }, msPerWord); 
+    }, msPerWord);
+
+    // Store the interval so it can be cleared externally (e.g., on session close)
+    typewriterIntervalRef.current = interval;
   };
   
   // Handle AI jury response
