@@ -537,21 +537,21 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       };
       const questionSpeaker = AGENT_TO_SPEAKER[sessionAgentId] || "technical";
       
-      // Add the greeting message
+      // Override greeting speaker to match the randomly selected first question speaker
       const greetingMessage: TranscriptMessage = {
-        speaker: firstJuryMessage.speaker,
+        speaker: questionSpeaker,
         text: firstJuryMessage.text,
         timestamp: 0,
       };
       setMessages([greetingMessage]);
       
       // Start speaking the greeting
-      setActiveSpeaker(firstJuryMessage.speaker);
+      setActiveSpeaker(questionSpeaker);
       setIsAISpeaking(true);
-      typewriterEffect(firstJuryMessage.text, firstJuryMessage.speaker);
+      typewriterEffect(firstJuryMessage.text, questionSpeaker);
       
       // After greeting finishes, immediately follow with the first dynamic question
-      speakWithProfile(firstJuryMessage.text, firstJuryMessage.speaker, () => {
+      speakWithProfile(firstJuryMessage.text, questionSpeaker, () => {
         if (sessionFirstQuestion) {
           // Add the first dynamic question as a distinct message
           const questionMessage: TranscriptMessage = {
@@ -1002,6 +1002,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Handle AI jury response
   const handleAIResponse = async (studentText: string) => {
     setIsProcessingAudio(true);
+    setLiveCaption('');
     
     try {
       // Call AI chat endpoint
@@ -1049,9 +1050,30 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         
         // Speak with voice profile
         speakWithProfile(juryResponse, speaker as string, () => {
-          setIsAISpeaking(false);
-          setActiveSpeaker(null);
-          playSoundEffect('chime'); // Signal it's the user's turn
+          if (data.topic_status === "exhausted" && data.next_question) {
+            // Wait a half second, then immediately queue the next question from the new speaker!
+            setTimeout(() => {
+              const nextQMsg: TranscriptMessage = {
+                 speaker: data.next_speaker as any,
+                 text: data.next_question,
+                 timestamp: Date.now() - sessionStartTime,
+              };
+              setMessages((prev) => [...prev, nextQMsg]);
+              setIsAISpeaking(true);
+              setActiveSpeaker(data.next_speaker);
+              typewriterEffect(data.next_question, data.next_speaker);
+              
+              speakWithProfile(data.next_question, data.next_speaker, () => {
+                 setIsAISpeaking(false);
+                 setActiveSpeaker(null);
+                 playSoundEffect('chime'); // Signal it's the user's turn
+              });
+            }, 500);
+          } else {
+            setIsAISpeaking(false);
+            setActiveSpeaker(null);
+            playSoundEffect('chime'); // Signal it's the user's turn
+          }
         });
       }, thinkingDelay);
       
@@ -1072,36 +1094,23 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       setIsRecording(false);
       setActiveSpeaker(null);
       
-      if (isChrome && recognition) {
-        recognition.stop();
-        // The actual submission will happen in a useEffect monitoring isRecording or similar,
-        // but to keep it simple and immediate, we can just grab what we have.
-        // To ensure we get the last bit, we'll wait a tiny bit for the final onresult.
-        setTimeout(async () => {
-          const text = liveCaptionRef.current.trim();
-          if (text.length > 0) {
-            // Add student message to history
-            const studentMessage: TranscriptMessage = {
-              speaker: 'student',
-              text: text,
-              timestamp: Date.now() - sessionStartTime,
-            };
-            setMessages((prev) => [...prev, studentMessage]);
-            setTranscript(`You: ${text}`);
-            await handleAIResponse(text);
-          } else {
-            setTranscript("No speech detected. Please try again.");
-          }
-        }, 300);
-      } else if (!isChrome && mediaRecorderRef.current) {
+      // Stop the visual Native STT if it's running
+      if (recognition) {
+        try {
+          recognition.stop();
+        } catch (e) {
+          console.warn("Could not stop visual recognition", e);
+        }
+      }
+      
+      // Stop the MediaRecorder, which triggers the actual Groq transcription in .onstop
+      if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
-        // The onstop handler will take care of processing
       }
     } else {
       // Start recording
       try {
         playSoundEffect('pop');
-        setTranscript('Listening...');
         setLiveCaption('');
         setIsRecording(true);
         setActiveSpeaker('student');
@@ -1111,73 +1120,73 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           setSessionStartTime(Date.now());
         }
 
-        if (isChrome && recognition) {
+        // 1. Kick off UI visual text generation if supported (purely for UX live preview)
+        if (recognition) {
           recognition.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
-          recognition.start();
-        } else if (!isChrome) {
-          // Fallback: Use MediaRecorder
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
-          mediaRecorderRef.current = mediaRecorder;
-          audioChunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              audioChunksRef.current.push(event.data);
-            }
-          };
-
-          mediaRecorder.onstop = async () => {
-            setTranscript('Transcribing audio...');
-            setIsProcessingAudio(true);
-            
-            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'record.webm');
-            formData.append('language', config.language);
-
-            try {
-              const res = await fetch('/api/simulation/transcribe', {
-                method: 'POST',
-                body: formData,
-              });
-              
-              if (!res.ok) throw new Error('Transcription failed');
-              const data = await res.json();
-              const text = data.text?.trim();
-
-              if (text && text.length > 0) {
-                const studentMessage: TranscriptMessage = {
-                  speaker: 'student',
-                  text: text,
-                  timestamp: Date.now() - sessionStartTime,
-                };
-                setMessages((prev) => [...prev, studentMessage]);
-                setTranscript(`You: ${text}`);
-                await handleAIResponse(text);
-              } else {
-                 setTranscript("No speech detected. Please try again.");
-              }
-            } catch (error) {
-              console.error("Transcription error:", error);
-              alert("Failed to transcribe audio. Please try again.");
-              setTranscript("Transcription failed.");
-            } finally {
-              setIsProcessingAudio(false);
-              // Stop all audio tracks
-              stream.getTracks().forEach(track => track.stop());
-            }
-          };
-
-          mediaRecorder.start();
-        } else {
-            alert("Speech recognition is not supported in this browser.");
-            setIsRecording(false);
-            setActiveSpeaker(null);
+          try {
+            recognition.start();
+          } catch (e) {
+            console.warn("Could not start visual recognition", e);
+          }
         }
+
+        // 2. ALWAYS Kick off MediaRecorder for final robust transcription
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          setIsProcessingAudio(true);
+          
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'record.webm');
+          formData.append('language', config.language);
+
+          try {
+            const res = await fetch('/api/simulation/transcribe', {
+              method: 'POST',
+              body: formData,
+            });
+            
+            if (!res.ok) throw new Error('Transcription failed');
+            const data = await res.json();
+            const text = data.text?.trim();
+
+            if (text && text.length > 0) {
+              const studentMessage: TranscriptMessage = {
+                speaker: 'student',
+                text: text,
+                timestamp: Date.now() - sessionStartTime,
+              };
+              setMessages((prev) => [...prev, studentMessage]);
+              setLiveCaption(text);
+              await handleAIResponse(text);
+            } else {
+               setLiveCaption("No speech detected. Please try again.");
+            }
+          } catch (error) {
+            console.error("Transcription error:", error);
+            alert("Failed to transcribe audio. Please try again.");
+            setLiveCaption("Transcription failed.");
+          } finally {
+            setIsProcessingAudio(false);
+            // Stop all audio tracks
+            stream.getTracks().forEach(track => track.stop());
+          }
+        };
+
+        mediaRecorder.start();
       } catch (error) {
         console.error("❌ Failed to start recording:", error);
-        alert("Microphone access required or Recognition error.");
+        alert("Microphone access required.");
         setIsRecording(false);
         setActiveSpeaker(null);
       }
@@ -1786,7 +1795,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                 )}
                 
                 {/* Live student caption (appears while recording) */}
-                {isRecording && liveCaption && (
+                {liveCaption && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}

@@ -258,7 +258,6 @@ export async function POST(request: NextRequest) {
         jury_feedback: evaluation.jury_feedback,
         feedback: evaluation.jury_feedback,
         transcript,
-        sticker_caption: null,
         memory_snapshot: evaluation.memory_update,
       })
       .eq("id", simulationId)
@@ -387,7 +386,6 @@ export async function POST(request: NextRequest) {
         proficiency: evaluation.proficiency,
       },
       feedback: evaluation.jury_feedback,
-      sticker_caption: null,
       memory_update: evaluation.memory_update,
     });
   } catch (error) {

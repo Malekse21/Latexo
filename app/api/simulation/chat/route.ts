@@ -84,8 +84,8 @@ function buildGatekeeperPrompt(
   // Only inject curveball instruction for hostile difficulty
   const curveball = difficulty === "hostile" ? CURVEBALL_INSTRUCTION : "";
 
-  const pivotInstruction = nextAgendaItem
-    ? `Seamlessly pivot to the next topic: "${nextAgendaItem}".`
+  const wrap_up = nextAgendaItem 
+    ? `Since we are moving to the next topic, your response should ONLY be a quick acknowledgment (e.g. "Good answer, let's move on"). Do NOT ask the next question yourself.`
     : `Wrap up gracefully — there are no more topics on the agenda.`;
 
   const limits = { gentle: 1, standard: 2, hostile: 3 };
@@ -95,12 +95,12 @@ function buildGatekeeperPrompt(
   // Dynamically tailor the instructions based on whether they hit the limit
   let followupInstructions = "";
   if (isExhausted) {
-    followupInstructions = `CRITICAL LIMIT REACHED: You have already asked ${followUpsCount} follow-up questions for this topic. You are strictly forbidden from asking any more follow-up questions. You MUST acknowledge the student's final answer, ${pivotInstruction} and set topic_status to "exhausted".`;
+    followupInstructions = `CRITICAL LIMIT REACHED: You have already asked ${followUpsCount} follow-up questions for this topic. You are strictly forbidden from asking any more follow-up questions. You MUST acknowledge the student's final answer briefly in 1 sentence. ${wrap_up} Set topic_status to "exhausted".`;
   } else {
     followupInstructions = `1. Evaluate the student's answer against the CURRENT TOPIC above.
 2. Did they answer it satisfactorily?
    - IF NO: Ask ONE focused follow-up question related SOLELY to this topic. You have asked ${followUpsCount}/${maxFollowUps} follow-ups so far. Set topic_status to "ongoing".
-   - IF YES: Acknowledge their answer briefly, then ${pivotInstruction} Set topic_status to "exhausted".`;
+   - IF YES: Acknowledge their answer briefly in 1 sentence. ${wrap_up} Set topic_status to "exhausted".`;
   }
 
   return `${personaPrompt}
@@ -312,8 +312,14 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
       difficulty === "hostile" ? "skeptical" : "serious";
 
     // ── Agenda-Pop Logic ──────────────────────────────────
+    let nextQuestionText = null;
+    let nextSpeaker = null;
+
     // If topic_status is "exhausted", advance the Agenda Queue
     if (topicStatus === "exhausted" && nextAvailable) {
+      nextQuestionText = nextAvailable.question;
+      nextSpeaker = AGENT_TO_SPEAKER[nextAvailable.agentId] || "technical";
+      
       console.log(
         `[Agenda] Topic exhausted: "${currentAgendaItem}" → advancing to: "${nextAvailable.question}"`
       );
@@ -359,13 +365,15 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
       });
     }
 
-    // ── Response (same shape as before — no frontend changes) ─
+    // ── Response (includes optional next question) ───────────
     return NextResponse.json({
       success: true,
       jury_response: juryResponse,
       speaker: juryMember,
       expression,
       topic_status: topicStatus,
+      next_question: nextQuestionText,
+      next_speaker: nextSpeaker,
     });
   } catch (error) {
     console.error("Chat API error:", error);
