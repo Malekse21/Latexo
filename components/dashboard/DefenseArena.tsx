@@ -167,6 +167,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Voice state (Native Browser APIs)
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [liveCaption, setLiveCaption] = useState("");
+  const [interimCaption, setInterimCaption] = useState("");
   const liveCaptionRef = useRef("");
   const [recognition, setRecognition] = useState<any>(null);
   const [initialData, setInitialData] = useState<any>(null);
@@ -354,6 +355,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     setMessages([]);
     setTranscript(t('common.loading'));
     setLiveCaption('');
+    setInterimCaption('');
     setTimeRemaining(0);
     setIsRecording(false);
     setIsProcessing(false);
@@ -606,22 +608,23 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         recog.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
         
         recog.onresult = (event: any) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
+          let interimText = '';
+          let finalText = '';
 
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
+              finalText += event.results[i][0].transcript;
             } else {
-              interimTranscript += event.results[i][0].transcript;
+              interimText += event.results[i][0].transcript;
             }
           }
 
-          if (finalTranscript) {
-            setLiveCaption(prev => prev + ' ' + finalTranscript);
+          if (finalText) {
+            setLiveCaption(prev => prev + ' ' + finalText);
+            setInterimCaption('');
           } else {
-            // Preview current sentence
-            setTranscript(interimTranscript);
+            // Preview current sentence in the student's area instead of replacing jury text
+            setInterimCaption(interimText);
           }
         };
 
@@ -946,6 +949,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       // Refresh profile to pick up updated streak + credits in the navbar
       await refreshProfile();
       
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
       setEvaluationResults(data);
       setPhase("aftermath");
     } catch (error) {
@@ -1040,6 +1044,10 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }
       
       const data = await response.json();
+
+      // GUARD: If session ended while waiting for AI, abort to prevent jury speaking over evaluation
+      if (isClosingRef.current || phase === 'closing') return;
+
       const juryResponse = data.jury_response;
       const speaker = data.speaker as ActiveSpeaker;
       
@@ -1051,8 +1059,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       };
       setMessages((prev) => [...prev, juryMessage]);
       
-      // Random thinking time (1.5s to 3.5s) for realism
-      const thinkingDelay = Math.floor(Math.random() * 2000) + 1500;
+      // Random thinking time (reduced for faster feeling)
+      const thinkingDelay = Math.floor(Math.random() * 1000) + 500;
       
       // We are processing audio, so thinking UI will show
       setIsProcessingAudio(true);
@@ -1070,6 +1078,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           if (data.topic_status === "exhausted" && data.next_question) {
             // Wait a half second, then immediately queue the next question from the new speaker!
             setTimeout(() => {
+              if (isClosingRef.current) return;
               const nextQMsg: TranscriptMessage = {
                  speaker: data.next_speaker as any,
                  text: data.next_question,
@@ -1129,6 +1138,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       try {
         playSoundEffect('pop');
         setLiveCaption('');
+        setInterimCaption('');
         setIsRecording(true);
         setActiveSpeaker('student');
 
@@ -1137,7 +1147,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           setSessionStartTime(Date.now());
         }
 
-        // 1. Kick off UI visual text generation if supported (purely for UX live preview)
+        // 1. ALWAYS Kick off MediaRecorder for final robust transcription FIRST
+        // This ensures the hardware is secured before the Web Speech API attempts access
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // 2. Kick off UI visual text generation if supported (purely for UX live preview)
         if (recognition) {
           recognition.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
           try {
@@ -1147,8 +1161,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           }
         }
 
-        // 2. ALWAYS Kick off MediaRecorder for final robust transcription
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
@@ -1201,9 +1213,15 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         };
 
         mediaRecorder.start();
-      } catch (error) {
+      } catch (error: any) {
         console.error("❌ Failed to start recording:", error);
-        alert("Microphone access required.");
+        
+        if (error.name === "NotReadableError") {
+           alert("Microphone is in use by another application or blocked by system settings. Please close apps like Teams/Zoom, or check Windows Privacy Settings.");
+        } else {
+           alert("Microphone access required. Please allow access in your browser.");
+        }
+        
         setIsRecording(false);
         setActiveSpeaker(null);
       }
@@ -1845,14 +1863,14 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                 )}
                 
                 {/* Live student caption (appears while recording) */}
-                {liveCaption && (
+                {(liveCaption || interimCaption) && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="border border-gray-300 bg-white p-3 text-sm max-w-2xl w-full"
                   >
                     <span className="font-semibold">{t('simulation.student_label')}: </span>
-                    <span className="text-gray-700">{liveCaption}</span>
+                    <span className="text-gray-700">{liveCaption} <span className="text-gray-400">{interimCaption}</span></span>
                   </motion.div>
                 )}
               </div>
