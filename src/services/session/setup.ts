@@ -66,7 +66,7 @@ export async function startSession(
   // ── Step 3: Load report and weak topics ───────────────
   const { data: report, error: reportError } = await supabase
     .from('reports')
-    .select('data, title, extracted_text, past_questions')
+    .select('data, title, extracted_text')
     .eq('id', reportId)
     .single();
 
@@ -139,7 +139,8 @@ export async function startSession(
 
   // ── Step 4: Generate question bank (1 AI call) ────────
   const totalTurns = TURN_COUNT[durationMinutes];
-  const pastQuestions: string[] = report.past_questions || [];
+  // Past questions now live on the user profile, not the report
+  const pastQuestions: string[] = profileData?.memory?.past_questions || [];
   const questionBank = await generateQuestionBank(
     pdfContext,
     memorySnapshot,

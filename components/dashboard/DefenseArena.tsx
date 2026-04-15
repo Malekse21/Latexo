@@ -170,7 +170,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   const [liveCaption, setLiveCaption] = useState("");
   const [interimCaption, setInterimCaption] = useState("");
   const liveCaptionRef = useRef("");
-  const [recognition, setRecognition] = useState<any>(null);
+
   const [initialData, setInitialData] = useState<any>(null);
   const [evaluationResults, setEvaluationResults] = useState<any>(null);
 
@@ -182,6 +182,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Loading phase enhancements
   const [loadingTickerIndex, setLoadingTickerIndex] = useState(0);
   const [reportName, setReportName] = useState<string | null>(null);
+  const [reportLanguage, setReportLanguage] = useState<Language | null>(null);
   // Closing phase enhancements
   const [deliberationStep, setDeliberationStep] = useState(0);
   
@@ -349,7 +350,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Full state reset — returns everything to initial values so user can start a new simulation without reloading
   const resetSimulation = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (recognition) recognition.stop();
+
     isClosingRef.current = false;
     isEvaluatingRef.current = false;
     setPhase("config");
@@ -410,7 +411,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [phase, isRecording, isProcessingAudio, isAISpeaking, recognition, messages]);
+  }, [phase, isRecording, isProcessingAudio, isAISpeaking, messages]);
 
   // Cycle loading messages — step 0=intro, 1/2/3=jury members, 4=ready to transition
   // Caps at step 3 (last jury card). Step 4 is set by the unified transition effect below.
@@ -455,23 +456,33 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
   }, [phase]);
 
-  // Fetch report name for personalized loading
+  // Fetch report metadata for setup config
   useEffect(() => {
-    if (phase === "loading" && (reportId || profile?.active_report_id)) {
-      const fetchName = async () => {
+    const finalReportId = reportId || profile?.active_report_id;
+    if (finalReportId) {
+      const fetchInfo = async () => {
         try {
           const supabase = createClient();
           const { data } = await supabase
             .from('reports')
-            .select('name')
-            .eq('id', reportId || profile?.active_report_id)
+            .select('name, language, detected_language')
+            .eq('id', finalReportId)
             .single();
-          if (data?.name) setReportName(data.name);
+          if (data) {
+            setReportName(data.name);
+            const lang = data.language || data.detected_language;
+            if (lang) {
+              const isFrench = lang.toLowerCase().startsWith('fr');
+              const mappedLang = isFrench ? 'french' : 'english';
+              setReportLanguage(mappedLang);
+              setConfig(prev => ({ ...prev, language: mappedLang }));
+            }
+          }
         } catch {}
       };
-      fetchName();
+      fetchInfo();
     }
-  }, [phase, reportId, profile?.active_report_id]);
+  }, [reportId, profile?.active_report_id]);
 
   // Cycle deliberation messages during closing/evaluating
   useEffect(() => {
@@ -598,51 +609,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
   }, [phase, loadingStep, initialData, config.duration, config.language]);
 
-  // Initialize Speech Recognition
+  // Initialize voices (Speech Recognition removed — all browsers use Whisper via Groq)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recog = new SpeechRecognition();
-        recog.continuous = true;
-        recog.interimResults = true;
-        recog.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
-        
-        recog.onresult = (event: any) => {
-          let interimText = '';
-          let finalText = '';
-
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalText += event.results[i][0].transcript;
-            } else {
-              interimText += event.results[i][0].transcript;
-            }
-          }
-
-          if (finalText) {
-            setLiveCaption(prev => prev + ' ' + finalText);
-            setInterimCaption('');
-          } else {
-            // Preview current sentence in the student's area instead of replacing jury text
-            setInterimCaption(interimText);
-          }
-        };
-
-        recog.onend = () => {
-          setIsRecording(false);
-          setActiveSpeaker(null);
-        };
-
-        recog.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error);
-          setIsRecording(false);
-          setActiveSpeaker(null);
-        };
-        
-        setRecognition(recog);
-      }
-
       // PRE-LOAD VOICES: Chrome Web Speech API bug workaround
       // getVoices() is async on some platforms, triggering it early ensures it's populated for the simulation
       if (window.speechSynthesis) {
@@ -767,9 +736,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         const pool = langMatched.length > 0 ? langMatched : voices;
 
         // Keywords to find female voices (for Souad)
-        const femaleKeywords = ['female', 'woman', 'zira', 'fiona', 'hazel', 'susan', 'amélie', 'hortense', 'denise', 'virginie', 'marie', 'céline', 'caroline', 'google uk english female', 'samantha', 'karen', 'moira', 'tessa', 'victoria', 'sara', 'julie', 'google français'];
+        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria'];
         // Keywords to find male voices
-        const maleKeywords = ['male', 'man', 'david', 'mark', 'paul', 'thomas', 'daniel', 'james', 'george', 'google uk english male', 'alex', 'fred', 'tom', 'jacques', 'henri', 'nicolas', 'philippe', 'claude'];
+        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred'];
         
         const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
           for (const kw of keywords) {
@@ -800,12 +769,17 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           // Amir: second distinct male voice, different from Malek's
           const malekVoice = findVoice(maleKeywords);
           selectedVoice = findVoice(maleKeywords, malekVoice);
-          if (!selectedVoice && pool.length > 1) {
-            // Just pick a different voice from pool
-            selectedVoice = pool[1] !== malekVoice ? pool[1] : pool[Math.min(2, pool.length - 1)];
+          if (!selectedVoice) {
+            // If no second male voice, reuse Malek's male voice (better than a female voice)
+            selectedVoice = malekVoice;
           }
           if (!selectedVoice) {
-            selectedVoice = pool[0];
+            // Last resort: pick any voice that does NOT match female keywords
+            const nonFemale = pool.filter(v => {
+              const name = v.name.toLowerCase();
+              return !femaleKeywords.some(kw => name.includes(kw));
+            });
+            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
           }
         }
 
@@ -878,8 +852,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       return;
     }
     isClosingRef.current = true;
-    // Stop any recording
-    if (recognition) recognition.stop();
+    // Stop any active audio
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     // Kill any active typewriter interval so it can't overwrite the closing text
     if (typewriterIntervalRef.current) {
@@ -942,6 +915,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
             language: config.language,
             durationMinutes: config.duration,
           },
+          timezoneOffset: new Date().getTimezoneOffset(),
         }),
       });
 
@@ -1129,24 +1103,37 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
   };
 
+  // Detect the best supported audio MIME type for MediaRecorder (mobile compatibility)
+  const getSupportedMimeType = (): { mimeType: string; ext: string } => {
+    const types = [
+      { mimeType: 'audio/webm;codecs=opus', ext: 'webm' },
+      { mimeType: 'audio/webm', ext: 'webm' },
+      { mimeType: 'audio/mp4', ext: 'mp4' },
+      { mimeType: 'audio/ogg;codecs=opus', ext: 'ogg' },
+      { mimeType: 'audio/wav', ext: 'wav' },
+      { mimeType: 'audio/mpeg', ext: 'mp3' },
+    ];
+    for (const t of types) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t.mimeType)) {
+        return t;
+      }
+    }
+    // Fallback — let the browser decide
+    return { mimeType: '', ext: 'webm' };
+  };
+
+  // Store the active stream in a ref so it survives re-renders on mobile
+  const activeStreamRef = useRef<MediaStream | null>(null);
+
   const handleMicClick = async () => {
     if (isRecording) {
       // Stop recording manually
       playSoundEffect('click');
       setIsRecording(false);
       setActiveSpeaker(null);
-      
-      // Stop the visual Native STT if it's running
-      if (recognition) {
-        try {
-          recognition.stop();
-        } catch (e) {
-          console.warn("Could not stop visual recognition", e);
-        }
-      }
-      
+
       // Stop the MediaRecorder, which triggers the actual Groq transcription in .onstop
-      if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
     } else {
@@ -1163,36 +1150,57 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           setSessionStartTime(Date.now());
         }
 
-        // 1. ALWAYS Kick off MediaRecorder for final robust transcription FIRST
-        // This ensures the hardware is secured before the Web Speech API attempts access
+        // 1. Acquire microphone stream
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        activeStreamRef.current = stream;
 
-        // 2. Kick off UI visual text generation if supported (purely for UX live preview)
-        if (recognition) {
-          recognition.lang = config.language === 'french' ? 'fr-FR' : 'en-US';
-          try {
-            recognition.start();
-          } catch (e) {
-            console.warn("Could not start visual recognition", e);
-          }
-        }
+        // 2. Determine best MIME type for this browser/device
+        const { mimeType, ext } = getSupportedMimeType();
+        const recorderOptions: MediaRecorderOptions = {};
+        if (mimeType) recorderOptions.mimeType = mimeType;
 
-        const mediaRecorder = new MediaRecorder(stream);
+        const mediaRecorder = new MediaRecorder(stream, recorderOptions);
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
 
         mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
+          if (event.data && event.data.size > 0) {
             audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onerror = (event: any) => {
+          console.error("MediaRecorder error:", event.error || event);
+          setIsRecording(false);
+          setActiveSpeaker(null);
+          // Clean up stream
+          if (activeStreamRef.current) {
+            activeStreamRef.current.getTracks().forEach(t => t.stop());
+            activeStreamRef.current = null;
           }
         };
 
         mediaRecorder.onstop = async () => {
           setIsProcessingAudio(true);
           
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const actualMime = mimeType || 'audio/webm';
+          const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
+          
+          // Guard: if blob is empty (mobile killed the stream), bail gracefully
+          if (audioBlob.size < 100) {
+            setLiveCaption(config.language === 'french' 
+              ? "Aucun son détecté. Veuillez réessayer." 
+              : "No audio captured. Please try again.");
+            setIsProcessingAudio(false);
+            if (activeStreamRef.current) {
+              activeStreamRef.current.getTracks().forEach(t => t.stop());
+              activeStreamRef.current = null;
+            }
+            return;
+          }
+
           const formData = new FormData();
-          formData.append('file', audioBlob, 'record.webm');
+          formData.append('file', audioBlob, `record.${ext}`);
           formData.append('language', config.language);
 
           try {
@@ -1215,27 +1223,44 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               setLiveCaption(text);
               await handleAIResponse(text);
             } else {
-               setLiveCaption("No speech detected. Please try again.");
+               setLiveCaption(config.language === 'french'
+                 ? "Aucune parole détectée. Veuillez réessayer."
+                 : "No speech detected. Please try again.");
             }
           } catch (error) {
             console.error("Transcription error:", error);
-            alert("Failed to transcribe audio. Please try again.");
-            setLiveCaption("Transcription failed.");
+            setLiveCaption(config.language === 'french'
+              ? "Échec de la transcription. Veuillez réessayer."
+              : "Transcription failed. Please try again.");
           } finally {
             setIsProcessingAudio(false);
             // Stop all audio tracks
-            stream.getTracks().forEach(track => track.stop());
+            if (activeStreamRef.current) {
+              activeStreamRef.current.getTracks().forEach(t => t.stop());
+              activeStreamRef.current = null;
+            }
           }
         };
 
-        mediaRecorder.start();
+        // Start with 1-second timeslice to force periodic data collection on mobile
+        // Without this, mobile browsers may only fire ondataavailable once at stop()
+        // and some (iOS Safari) may fire it with an empty blob if interrupted
+        mediaRecorder.start(1000);
       } catch (error: any) {
         console.error("❌ Failed to start recording:", error);
         
         if (error.name === "NotReadableError") {
-           alert("Microphone is in use by another application or blocked by system settings. Please close apps like Teams/Zoom, or check Windows Privacy Settings.");
+           alert(config.language === 'french'
+             ? "Le microphone est utilisé par une autre application. Fermez les autres apps et réessayez."
+             : "Microphone is in use by another application. Close other apps and try again.");
+        } else if (error.name === "NotAllowedError") {
+           alert(config.language === 'french'
+             ? "Accès au microphone refusé. Autorisez l'accès dans les réglages de votre navigateur."
+             : "Microphone access denied. Allow access in your browser settings.");
         } else {
-           alert("Microphone access required. Please allow access in your browser.");
+           alert(config.language === 'french'
+             ? "Impossible d'accéder au microphone. Vérifiez vos paramètres."
+             : "Microphone access required. Please allow access in your browser.");
         }
         
         setIsRecording(false);
@@ -1353,54 +1378,62 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="w-full h-full px-4 md:px-6 py-6 flex items-start md:items-center justify-center relative overflow-y-auto"
+            className="w-full h-full px-4 md:px-6 py-3 flex items-start md:items-center justify-center relative overflow-y-auto"
           >
             <div className="max-w-3xl w-full my-auto">
-              <div className="mb-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                  <h2 className="text-2xl md:text-3xl font-semibold font-serif text-gray-900 tracking-tight">
+              <div className="mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
+                  <h2 className="text-xl md:text-2xl font-semibold font-serif text-gray-900 tracking-tight">
                     {t('simulation.setup')}
                   </h2>
                   {liveSimulations > 0 && (
-                    <div className="flex items-center shrink-0 gap-2 px-3 py-1.5 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] md:text-xs font-bold uppercase tracking-widest text-black">
+                    <div className="flex items-center shrink-0 gap-2 px-3 py-1 bg-white border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[10px] md:text-xs font-bold uppercase tracking-widest text-black">
                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
                       {liveSimulations} {t('simulation.active_simulations')}
                     </div>
                   )}
                 </div>
-                <p className="text-gray-500 text-sm">{t('simulation.setup_subtitle')}</p>
+                <p className="text-gray-500 text-xs">{t('simulation.setup_subtitle')}</p>
               </div>
 
 
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {/* Left Column */}
-                <div className="flex flex-col h-full space-y-6">
+                <div className="flex flex-col h-full space-y-4">
                   {/* Language Selection */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
+                    <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">
                       {t('simulation.report_language')}
                     </label>
                     <div className="flex gap-3">
-                      {["french", "english"].map((lang) => (
+                      {["french", "english"].map((lang) => {
+                        const isFrenchReport = reportLanguage === 'french';
+                        const isEnglishReport = reportLanguage === 'english';
+                        const isDisabled = (lang === 'french' && isEnglishReport) || (lang === 'english' && isFrenchReport); 
+
+                        return (
                         <button
                           key={lang}
+                          disabled={isDisabled}
                           onClick={() => setConfig({ ...config, language: lang as Language })}
-                          className={`flex-1 py-3 px-4 border rounded-xl transition-all text-sm font-medium shadow-sm ${
-                            config.language === lang
-                              ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
-                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+                          className={`flex-1 py-2.5 px-4 border rounded-xl transition-all text-sm font-medium shadow-sm ${
+                            isDisabled
+                              ? "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+                              : config.language === lang
+                                ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
+                                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
                           }`}
                         >
                           {lang === 'french' ? t('simulation.lang_french') : t('simulation.lang_english')}
                         </button>
-                      ))}
+                      )})}
                     </div>
                   </div>
 
                   {/* Duration Selection */}
                   <div className="flex flex-col flex-1">
-                    <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
+                    <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">
                       {t('simulation.duration')}
                     </label>
                     <div className="grid grid-cols-3 gap-3">
@@ -1417,7 +1450,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                               }
                               setConfig({ ...config, duration });
                             }}
-                            className={`py-3 px-2 border rounded-xl shadow-sm transition-all text-center cursor-pointer flex flex-col items-center justify-center ${
+                            className={`py-2.5 px-2 border rounded-xl shadow-sm transition-all text-center cursor-pointer flex flex-col items-center justify-center ${
                               !hasEnough
                                 ? "bg-gray-50 text-gray-400 border-gray-200 opacity-60 hover:bg-red-50/30"
                                 : config.duration === duration
@@ -1431,7 +1464,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                       })}
                     </div>
                     
-                    <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                    <div className="mt-3 flex flex-col sm:flex-row gap-2">
                       <div className="flex-1 flex items-center justify-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-200 shadow-sm text-gray-600">
                         <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
                         <span className="text-[11px] font-semibold uppercase tracking-wider">
@@ -1477,10 +1510,10 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
                 {/* Right Column - Difficulty */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wider">
+                  <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">
                     {t('simulation.difficulty')}
                   </label>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {DIFFICULTY_CARDS.map((diff) => {
                       const Icon = diff.icon;
                       const isSelected = config.difficulty === diff.id;
@@ -1492,7 +1525,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                           key={diff.id}
                           onClick={() => !isHostileLocked && setConfig({ ...config, difficulty: diff.id })}
                           disabled={isHostileLocked}
-                          className={`w-full p-4 border rounded-2xl text-left transition-all flex items-start gap-4 ${
+                          className={`w-full p-3 border rounded-2xl text-left transition-all flex items-start gap-3 ${
                             isHostileLocked
                               ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
                               : isSelected
@@ -1520,11 +1553,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               </div>
 
               {/* Initialize Button */}
-              <div className="mt-8 pt-6">
+              <div className="mt-5 pt-4">
                 <button
                   onClick={() => setShowConfirmModal(true)}
                   disabled={isProcessing || !profile || profile.credits < currentCost}
-                  className="w-full bg-gray-900 text-white py-4 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
+                  className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
                 >
                   <div className="flex items-center justify-center gap-3 relative z-10">
                     {isProcessing ? (

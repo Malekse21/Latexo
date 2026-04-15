@@ -17,6 +17,7 @@ interface EvaluateRequest {
     language: string;
     durationMinutes: number;
   };
+  timezoneOffset?: number;
 }
 
 interface BehavioralStats {
@@ -273,9 +274,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Update profile — dedicated columns + lean memory
+    // Merge past_questions into profile memory (user-scoped, not report-scoped)
+    const existingPastQuestions: string[] = pastMemory?.past_questions || [];
+    const newQuestions: string[] = liveSession?.questionsAskedTexts || [];
+    const combinedQuestions = [...existingPastQuestions, ...newQuestions];
+    // Keep only the last 60 questions to avoid prompt bloat
+    const trimmedQuestions = combinedQuestions.slice(-60);
+
     const updatedMemory = {
       ...pastMemory,
       last_note: evaluation.memory_update,
+      past_questions: trimmedQuestions,
     };
     // Remove legacy duplicates from memory blob
     delete updatedMemory.last_session;
@@ -284,15 +293,20 @@ export async function POST(request: NextRequest) {
 
     // Step 6b: Calculate streak
     const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const timezoneOffsetMs = (body.timezoneOffset || 0) * 60000;
+    // Shift timestamps by the client's offset so getUTCDate() aligns with their local day
+    const nowLocalUTC = new Date(now.getTime() - timezoneOffsetMs);
+    const todayLocalUTC = new Date(Date.UTC(nowLocalUTC.getUTCFullYear(), nowLocalUTC.getUTCMonth(), nowLocalUTC.getUTCDate()));
     
     let currentStreak = profileData?.current_streak || 0;
     let longestStreak = profileData?.longest_streak || 0;
     const lastSessionDate = profileData?.last_session ? new Date(profileData.last_session) : null;
 
     if (lastSessionDate) {
-      const lastUTC = new Date(Date.UTC(lastSessionDate.getUTCFullYear(), lastSessionDate.getUTCMonth(), lastSessionDate.getUTCDate()));
-      const diffDays = Math.floor((todayUTC.getTime() - lastUTC.getTime()) / (1000 * 60 * 60 * 24));
+      const lastLocalUTCBase = new Date(lastSessionDate.getTime() - timezoneOffsetMs);
+      const lastLocalUTC = new Date(Date.UTC(lastLocalUTCBase.getUTCFullYear(), lastLocalUTCBase.getUTCMonth(), lastLocalUTCBase.getUTCDate()));
+      
+      const diffDays = Math.round((todayLocalUTC.getTime() - lastLocalUTC.getTime()) / (1000 * 60 * 60 * 24));
 
       if (diffDays === 0) {
         // Already practiced today — streak stays the same
@@ -323,36 +337,16 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", user.id);
 
-    // Step 5: Save asked questions to report for cross-simulation continuity
+    // Step 7: Cleanup and pruning (questions already saved to profile memory above)
     try {
-      if (liveSession && liveSession.questionsAskedTexts?.length > 0) {
-        // Fetch current past_questions from the report
-        const { data: reportForHistory } = await supabase
-          .from("reports")
-          .select("past_questions")
-          .eq("id", report_id)
-          .single();
-
-        const existingPastQuestions: string[] = reportForHistory?.past_questions || [];
-        const combined = [...existingPastQuestions, ...liveSession.questionsAskedTexts];
-        // Keep only the last 60 questions to avoid prompt bloat
-        const trimmed = combined.slice(-60);
-
-        await supabase
-          .from("reports")
-          .update({ past_questions: trimmed })
-          .eq("id", report_id);
-      }
-
       // Clean up live session
       await deleteSession(user.id);
 
-      // --- PRUNING LOGIC: Keep only the 3 most recent simulations ---
+      // --- PRUNING LOGIC: Keep only the 3 most recent simulations per user (global) ---
       const { data: allSims } = await supabase
         .from("simulations")
         .select("id")
         .eq("user_id", user.id)
-        .eq("report_id", report_id)
         .order("created_at", { ascending: false });
 
       if (allSims && allSims.length > 3) {
