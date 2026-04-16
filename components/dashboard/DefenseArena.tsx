@@ -753,9 +753,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         const pool = langMatched.length > 0 ? langMatched : voices;
 
         // Keywords to find female voices (for Souad)
-        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria'];
+        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'sylvie', 'celine', 'zira', 'michelle', 'alice', 'lisa', 'catherine', 'female', 'woman', 'samantha', 'victoria'];
         // Keywords to find male voices
-        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred'];
+        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'henri', 'daniel', 'guillaume', 'david', 'mark', 'richard', 'arthur', 'george', 'adam', 'leo', 'male', 'man', 'alex', 'fred', 'claude'];
         
         const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
           for (const kw of keywords) {
@@ -767,37 +767,37 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           return null;
         };
 
+        const getNonFemaleFallback = (fallbackPool: SpeechSynthesisVoice[], exclude?: SpeechSynthesisVoice | null) => {
+          const nonFemale = fallbackPool.filter(v => 
+            v !== exclude && !femaleKeywords.some(kw => v.name.toLowerCase().includes(kw))
+          );
+          return nonFemale.length > 0 ? nonFemale[0] : fallbackPool[0];
+        };
+
+        const getNonMaleFallback = (fallbackPool: SpeechSynthesisVoice[]) => {
+          const nonMale = fallbackPool.filter(v => 
+            !maleKeywords.some(kw => v.name.toLowerCase().includes(kw))
+          );
+          // Pick the last one commonly to avoid the default which is often a generic voice
+          return nonMale.length > 0 ? nonMale[nonMale.length - 1] : fallbackPool[fallbackPool.length - 1];
+        };
+
         let selectedVoice: SpeechSynthesisVoice | null = null;
 
         if (speaker === "academic") {
           // Souad: female voice
           selectedVoice = findVoice(femaleKeywords);
-          if (!selectedVoice) {
-            // fallback: pick the last voice in pool (often different from default)
-            selectedVoice = pool[pool.length - 1];
-          }
+          if (!selectedVoice) selectedVoice = getNonMaleFallback(pool);
         } else if (speaker === "technical") {
           // Malek: first male voice found
           selectedVoice = findVoice(maleKeywords);
-          if (!selectedVoice) {
-            selectedVoice = pool[0]; // first available
-          }
+          if (!selectedVoice) selectedVoice = getNonFemaleFallback(pool);
         } else if (speaker === "business") {
-          // Amir: second distinct male voice, different from Malek's
+          // Amir: second distinct male voice
           const malekVoice = findVoice(maleKeywords);
           selectedVoice = findVoice(maleKeywords, malekVoice);
-          if (!selectedVoice) {
-            // If no second male voice, reuse Malek's male voice (better than a female voice)
-            selectedVoice = malekVoice;
-          }
-          if (!selectedVoice) {
-            // Last resort: pick any voice that does NOT match female keywords
-            const nonFemale = pool.filter(v => {
-              const name = v.name.toLowerCase();
-              return !femaleKeywords.some(kw => name.includes(kw));
-            });
-            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
-          }
+          if (!selectedVoice && malekVoice) selectedVoice = malekVoice;
+          if (!selectedVoice) selectedVoice = getNonFemaleFallback(pool, malekVoice);
         }
 
         if (selectedVoice) {
