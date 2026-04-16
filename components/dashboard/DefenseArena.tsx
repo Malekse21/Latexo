@@ -189,6 +189,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Config phase enhancements
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isChrome, setIsChrome] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [liveSimulations, setLiveSimulations] = useState(0);
@@ -385,11 +386,21 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
   };
 
-  // Detect browser on mount
+  // Detect browser and device on mount
   useEffect(() => {
     const isChromium = !!(window as any).chrome;
     const isEdge = navigator.userAgent.indexOf("Edg") !== -1;
     setIsChrome(isChromium && !isEdge);
+
+    const checkMobile = () => {
+      const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+      return mobileRegex.test(navigator.userAgent) || window.innerWidth < 768;
+    };
+    setIsMobile(checkMobile());
+    
+    const handleResize = () => setIsMobile(checkMobile());
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Handle Keyboard Spacebar for Mic Toggle
@@ -476,6 +487,10 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               const mappedLang = isFrench ? 'french' : 'english';
               setReportLanguage(mappedLang);
               setConfig(prev => ({ ...prev, language: mappedLang }));
+            } else {
+              const fallbackLang = initialLanguage || (language === "fr" ? "french" : "english");
+              setReportLanguage(fallbackLang);
+              setConfig(prev => ({ ...prev, language: fallbackLang }));
             }
           }
         } catch {}
@@ -736,9 +751,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         const pool = langMatched.length > 0 ? langMatched : voices;
 
         // Keywords to find female voices (for Souad)
-        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria'];
+        // Added 'zira', 'hazel', 'susan', etc for Windows
+        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria', 'zira', 'hazel', 'susan', 'catherine', 'karen', 'tessa', 'moira'];
         // Keywords to find male voices
-        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred'];
+        // Added 'david', 'mark', 'richard', etc for Windows
+        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred', 'david', 'mark', 'richard', 'george', 'arthur', 'martin'];
         
         const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
           for (const kw of keywords) {
@@ -750,36 +767,48 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           return null;
         };
 
+        const getNonFemaleVoices = () => {
+          return pool.filter(v => {
+            const name = v.name.toLowerCase();
+            return !femaleKeywords.some(kw => name.includes(kw));
+          });
+        };
+
         let selectedVoice: SpeechSynthesisVoice | null = null;
 
         if (speaker === "academic") {
           // Souad: female voice
           selectedVoice = findVoice(femaleKeywords);
           if (!selectedVoice) {
-            // fallback: pick the last voice in pool (often different from default)
+            // fallback: pick the last voice in pool (often female or different)
             selectedVoice = pool[pool.length - 1];
           }
         } else if (speaker === "technical") {
           // Malek: first male voice found
           selectedVoice = findVoice(maleKeywords);
           if (!selectedVoice) {
-            selectedVoice = pool[0]; // first available
+            const nonFemale = getNonFemaleVoices();
+            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
           }
         } else if (speaker === "business") {
-          // Amir: second distinct male voice, different from Malek's
+          // Amir: second distinct male voice
           const malekVoice = findVoice(maleKeywords);
           selectedVoice = findVoice(maleKeywords, malekVoice);
-          if (!selectedVoice) {
-            // If no second male voice, reuse Malek's male voice (better than a female voice)
-            selectedVoice = malekVoice;
+          if (!selectedVoice && malekVoice) {
+            selectedVoice = malekVoice; // Reuse Malek if we only found 1 explicit male
           }
+          
           if (!selectedVoice) {
-            // Last resort: pick any voice that does NOT match female keywords
-            const nonFemale = pool.filter(v => {
-              const name = v.name.toLowerCase();
-              return !femaleKeywords.some(kw => name.includes(kw));
-            });
-            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
+            // Last resort: we didn't find any explicit male voices.
+            // Malek got nonFemale[0], so give Amir nonFemale[1] if possible.
+            const nonFemale = getNonFemaleVoices();
+            if (nonFemale.length > 1) {
+              selectedVoice = nonFemale[1];
+            } else if (nonFemale.length > 0) {
+              selectedVoice = nonFemale[0];
+            } else {
+              selectedVoice = pool[0];
+            }
           }
         }
 
@@ -1408,9 +1437,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                     </label>
                     <div className="flex gap-3">
                       {["french", "english"].map((lang) => {
-                        const isFrenchReport = reportLanguage === 'french';
-                        const isEnglishReport = reportLanguage === 'english';
-                        const isDisabled = (lang === 'french' && isEnglishReport) || (lang === 'english' && isFrenchReport); 
+                        const isLoading = reportLanguage === null;
+                        const isDisabled = isLoading || reportLanguage !== lang;
 
                         return (
                         <button
@@ -1554,49 +1582,61 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
               {/* Initialize Button */}
               <div className="mt-5 pt-4">
-                <button
-                  onClick={() => setShowConfirmModal(true)}
-                  disabled={isProcessing || !profile || profile.credits < currentCost}
-                  className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
-                >
-                  <div className="flex items-center justify-center gap-3 relative z-10">
-                    {isProcessing ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>{t('common.loading')}</span>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-lg">{t('simulation.start_simulation')}</span>
-                        <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
-                          {currentCost}
-                          <NextImage 
-                            src="/images/favicon.jpeg" 
-                            alt="Latexo" 
-                            width={14} 
-                            height={14} 
-                            className="rounded-full grayscale brightness-200"
-                          />
-                        </span>
-                      </>
-                    )}
+                {isMobile ? (
+                  <div className="w-full bg-orange-50 border border-orange-200 text-orange-800 py-4 px-4 rounded-xl font-medium shadow-sm flex flex-col sm:flex-row items-center justify-center gap-3 text-sm text-center">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <span>
+                      {config.language === 'french' 
+                        ? "Les simulations ne sont pas supportées sur mobile. Veuillez utiliser un ordinateur." 
+                        : "Simulations are not supported on mobile devices. Please use a computer."}
+                    </span>
                   </div>
-                </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowConfirmModal(true)}
+                      disabled={isProcessing || !profile || profile.credits < currentCost}
+                      className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
+                    >
+                      <div className="flex items-center justify-center gap-3 relative z-10">
+                        {isProcessing ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>{t('common.loading')}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-lg">{t('simulation.start_simulation')}</span>
+                            <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
+                              {currentCost}
+                              <NextImage 
+                                src="/images/favicon.jpeg" 
+                                alt="Latexo" 
+                                width={14} 
+                                height={14} 
+                                className="rounded-full grayscale brightness-200"
+                              />
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </button>
 
-                <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
-                  {profile && profile.credits >= currentCost ? (
-                    <div className="flex items-center gap-2">
-                       <span>{t('simulation.estimated_balance')}</span>
-                       <span className="text-black font-bold">{profile.credits - currentCost}</span>
-                       <span>{t('simulation.credits_remaining')}</span>
+                    <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
+                      {profile && profile.credits >= currentCost ? (
+                        <div className="flex items-center gap-2">
+                          <span>{t('simulation.estimated_balance')}</span>
+                          <span className="text-black font-bold">{profile.credits - currentCost}</span>
+                          <span>{t('simulation.credits_remaining')}</span>
+                        </div>
+                      ) : profile ? (
+                        <p className="text-red-600 font-bold border-b border-red-600">
+                          {t('simulation.insufficient_credits', { credits: profile.credits })}
+                        </p>
+                      ) : null}
                     </div>
-                  ) : profile ? (
-                    <p className="text-red-600 font-bold border-b border-red-600">
-                      {t('simulation.insufficient_credits', { credits: profile.credits })}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+                  </>
+                )}
             </div>
           </motion.div>
         )}
