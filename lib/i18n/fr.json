@@ -68,7 +68,10 @@
     "perf_best": "Meilleure",
     "perf_last": "Dernière session",
     "perf_recoverable": "Ces {{count}} points sont récupérables",
-    "perf_no_session": "Aucune session enregistrée"
+    "perf_no_session": "Aucune session enregistrée",
+    "readiness": "Préparation",
+    "target": "cible : 85+",
+    "performance": "Performance"
   },
   "stats": {
     "title": "Données du Fichier",
@@ -148,7 +151,10 @@
     "deliberation_3": "Évaluation de la viabilité business...",
     "deliberation_4": "Calcul de la note finale...",
     "lang_french": "Français",
-    "lang_english": "Anglais"
+    "lang_english": "Anglais",
+    "language_auto_detected": "Détectée automatiquement depuis votre rapport",
+    "desktop_required": "Ordinateur Requis",
+    "desktop_required_desc": "La simulation de soutenance requiert un enregistreur audio et une interface complexe. Veuillez vous connecter sur un ordinateur pour lancer une session."
   },
   "upload": {
     "title": "Télécharger le Rapport PDF",
@@ -160,7 +166,19 @@
     "done": "Terminé !",
     "failed": "Échec du téléchargement. Veuillez réessayer.",
     "analyzing_subtitle": "Cela peut prendre quelques secondes...",
-    "try_again": "Réessayer"
+    "try_again": "Réessayer",
+    "step_validating": "Validation du fichier",
+    "step_extracting": "Extraction du texte et miniature",
+    "step_uploading": "Téléchargement du PDF",
+    "step_saving": "Enregistrement du rapport",
+    "msg_checking": "Vérification du fichier...",
+    "msg_scanning": "Analyse de votre document...",
+    "msg_finalizing": "Finalisation...",
+    "update_title": "Mettre à jour le rapport existant",
+    "update_desc_1": "Le téléchargement d'un nouveau rapport mettra à jour votre fichier actuel et son extraction.",
+    "update_desc_2": "Vos simulations, votre série et votre historique existant seront préservés.",
+    "cancel": "Annuler",
+    "confirm_update": "Oui, Mettre à jour"
   },
   "leaderboard": {
     "title": "CLASSEMENT",
@@ -175,5 +193,12 @@
     "empty": "Aucun étudiant classé pour le moment.",
     "not_in_top": "Votre Classement",
     "back": "Retour"
+  },
+  "payment": {
+    "choose_pack": "Choisis le pack qui correspond à ta soutenance",
+    "start_sim": "Commencer ma simulation",
+    "recharge": "Recharge tes crédits",
+    "footer": "Les crédits n'expirent jamais · Paiement sécurisé via D17",
+    "continue": "Continuer"
   }
 }

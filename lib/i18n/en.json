@@ -47,7 +47,7 @@
     "no_file": "NO FILE DETECTED.",
     "upload_sequence": "INITIATE UPLOAD SEQUENCE TO VIEW DATA.",
     "aftermath_empty_title": "The Aftermath",
-    "aftermath_empty_subtitle": "Complete a defense simulation to view your performance metrics and results.",
+    "aftermath_empty_subtitle": "Complete a simulation to view your performance metrics and results.",
     "aftermath_status": "STATUS: NO SIMULATION DATA",
     "greetings": [
       "Welcome back",
@@ -68,7 +68,10 @@
     "perf_best": "Best",
     "perf_last": "Last Session",
     "perf_recoverable": "These {{count}} points are recoverable",
-    "perf_no_session": "No session recorded"
+    "perf_no_session": "No session recorded",
+    "readiness": "Readiness",
+    "target": "target: 85+",
+    "performance": "Performance"
   },
   "stats": {
     "title": "File Data",
@@ -148,7 +151,10 @@
     "deliberation_3": "Assessing business viability...",
     "deliberation_4": "Calculating final grade...",
     "lang_french": "French",
-    "lang_english": "English"
+    "lang_english": "English",
+    "language_auto_detected": "Auto-detected from your report",
+    "desktop_required": "Desktop Required",
+    "desktop_required_desc": "The defense simulation requires an audio recorder and a complex interface. Please log in on a computer to start a session."
   },
   "upload": {
     "title": "Upload PDF Report",
@@ -160,7 +166,19 @@
     "done": "Done!",
     "failed": "Upload failed. Please try again.",
     "analyzing_subtitle": "This may take a few seconds...",
-    "try_again": "Try Again"
+    "try_again": "Try Again",
+    "step_validating": "Validating file",
+    "step_extracting": "Extracting text & thumbnail",
+    "step_uploading": "Uploading PDF",
+    "step_saving": "Saving report",
+    "msg_checking": "Checking file...",
+    "msg_scanning": "Scanning your document...",
+    "msg_finalizing": "Finalizing...",
+    "update_title": "Update Existing Report",
+    "update_desc_1": "Uploading a new report will update your current file and text extraction.",
+    "update_desc_2": "Your existing simulations, streak, and history will be preserved.",
+    "cancel": "Cancel",
+    "confirm_update": "Yes, Update Report"
   },
   "leaderboard": {
     "title": "LEADERBOARD",
@@ -175,5 +193,12 @@
     "empty": "No ranked students yet.",
     "not_in_top": "Your Ranking",
     "back": "Back"
+  },
+  "payment": {
+    "choose_pack": "Choose the pack matching your defense",
+    "start_sim": "Start my simulation",
+    "recharge": "Recharge your credits",
+    "footer": "Credits never expire · Secure payment via D17",
+    "continue": "Continue"
   }
 }

@@ -2,9 +2,16 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Session, User } from "@supabase/supabase-js";
+import { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
-import { posthog } from "@/components/providers/posthog-provider";
+
+/** Detect AbortError thrown when React unmounts mid-fetch */
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof DOMException && err.name === 'AbortError' ||
+    (err instanceof Error && err.message?.includes('aborted'))
+  );
+}
 
 interface Profile {
   id: string;
@@ -55,7 +62,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     fr: require("@/lib/i18n/fr.json")
   };
 
-  const t = (key: string, variables?: Record<string, string | number>) => {
+  const t = React.useCallback((key: string, variables?: Record<string, string | number>) => {
     const keys = key.split('.');
     let value = (translations[language] as any);
     
@@ -74,11 +81,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     return value;
-  };
+  }, [language]); // translations are purely derived from language
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, retryOnNull = true): Promise<Profile | null> => {
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -86,129 +93,142 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      if (error) throw error;
-      setProfile(data);
+      if (error) {
+        // Supabase wraps AbortError in its error response — silently ignore
+        if (error.message?.includes('aborted')) return null;
+
+        console.error(
+          "[UserContext] fetchProfile error:",
+          error.message ?? "Unknown error",
+          `(code: ${error.code ?? "N/A"}, status: ${(error as any).status ?? "N/A"})`
+        );
+
+        if (error.code === 'PGRST116') {
+          await signOut();
+        }
+        return null;
+      }
+
+      if (!data && retryOnNull) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return fetchProfile(userId, false);
+      }
+      return data;
     } catch (error: any) {
-      console.error("Error fetching profile:", error);
-      
-      // If the profile doesn't exist (PGRST116), the session is invalid for our app logic.
-      // We should sign out the user to clean up the state.
-      if (error?.code === 'PGRST116') {
-        console.warn("Profile not found for user. Signing out...");
-        await signOut();
-      }
+      // Silently ignore AbortError — React unmounted while fetch was in-flight
+      if (isAbortError(error)) return null;
+      console.error("[UserContext] Unexpected fetchProfile error:", error?.message ?? error);
+      return null;
     }
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = React.useCallback(async () => {
     if (user) {
-      await fetchProfile(user.id);
+      const data = await fetchProfile(user.id, false);
+      if (data) {
+        setProfile(data);
+      }
     }
-  };
+  }, [user]);
 
+  // ──────────────────────────────────────────────────────────────────
+  // Effect 1: Auth listener — ONLY sets user/session state.
+  // NEVER make Supabase queries inside onAuthStateChange — it deadlocks
+  // because the client's internal auth lock isn't released until this
+  // callback returns, but the query needs that lock.
+  // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    let mounted = true;
-
-    const initializeSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!mounted) return;
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      }
-      
-      if (mounted) {
-        setLoading(false);
-      }
-    };
-
-    initializeSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        if (!mounted) return;
-        
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        
-        if (currentSession?.user) {
-          // Identify user on any active session ping
-          posthog.identify(currentSession.user.id, {
-            email: currentSession.user.email,
-            name: currentSession.user.user_metadata?.full_name,
-          });
+      (event: AuthChangeEvent, currentSession: Session | null) => {
+        // Skip TOKEN_REFRESHED — session user hasn't changed
+        if (event === 'TOKEN_REFRESHED') {
+          return;
+        }
 
-          if (event === 'SIGNED_IN') {
-            posthog.capture('user_logged_in');
-            
-            // Only re-trigger the loading/fetch sequence explicitly on SIGNED_IN
-            setLoading(true);
-            await fetchProfile(currentSession.user.id);
-            if (mounted) setLoading(false);
-          } else if (event === 'USER_UPDATED') {
-            // Background refresh, no loading UI needed
-            await fetchProfile(currentSession.user.id);
-          }
-        } else if (event === 'SIGNED_OUT') {
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+        } else {
+          setSession(null);
+          setUser(null);
           setProfile(null);
-          if (mounted) setLoading(false);
+          setLoading(false);
         }
       }
     );
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  const signOut = async () => {
-    // 1. Optimistic UI updates for immediate feedback
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    posthog.reset();
-    
-    // 2. Instant client-side navigation to landing page
-    router.push("/");
-    
-    // 3. Perform the actual logout in the background
+  // ──────────────────────────────────────────────────────────────────
+  // Effect 2: Fetch profile whenever `user` changes.
+  // Runs OUTSIDE onAuthStateChange, so no deadlock.
+  // ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let cancelled = false;
+    const loadProfile = async () => {
+      const data = await fetchProfile(user.id);
+      if (cancelled) {
+        return;
+      }
+      if (data) {
+        setProfile(data);
+      } else {
+      }
+      setLoading(false);
+    };
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]); // Only re-run when the actual user ID changes
+
+  const signOut = React.useCallback(async () => {
     try {
       await supabase.auth.signOut();
     } catch (err) {
-      console.error("Supabase signOut error (background):", err);
+      console.error("[UserContext] Supabase signOut error:", err);
     }
     
-    // 4. Ensure all stale storage is nuked
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    
+    // Only clear our app's storage key — NOT localStorage.clear()
+    // which destroys Supabase's internal auth state in the singleton client
     try {
-      localStorage.clear();
-      sessionStorage.clear();
+      localStorage.removeItem('latexo-app-storage');
     } catch (e) {
       // silent
     }
-
-    // 5. Refresh the router to update any Server Components mapped to the auth state
+    router.push("/");
     router.refresh();
-  };
+  }, [router, supabase]);
+
+  const value = React.useMemo(() => ({
+    user, 
+    session, 
+    profile, 
+    loading, 
+    isSidebarCollapsed, 
+    toggleSidebar, 
+    language,
+    setLanguage,
+    t,
+    signOut, 
+    refreshProfile 
+  }), [user, session, profile, loading, isSidebarCollapsed, language, t, signOut, refreshProfile]);
 
   return (
-    <UserContext.Provider value={{ 
-      user, 
-      session, 
-      profile, 
-      loading, 
-      isSidebarCollapsed, 
-      toggleSidebar, 
-      language,
-      setLanguage,
-      t,
-      signOut, 
-      refreshProfile 
-    }}>
+    <UserContext.Provider value={value}>
       {children}
     </UserContext.Provider>
   );

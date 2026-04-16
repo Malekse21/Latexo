@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { deleteUserReports } from '@/lib/supabase/cleanup';
+import { checkUploadRateLimit } from '@/lib/rate-limit-upload';
+
+export const maxDuration = 60; // seconds (Vercel Pro limit)
 
 /**
  * Strips boilerplate pages (cover, acknowledgments, TOC, list of figures)
@@ -10,7 +12,6 @@ import { deleteUserReports } from '@/lib/supabase/cleanup';
 function cleanBoilerplate(raw: string): string {
   let text = raw;
 
-  // ── Find the start of actual content ──
   const startPatterns = [
     /introduction\s+g[eé]n[eé]rale/i,
     /chapitre\s+1/i,
@@ -26,7 +27,6 @@ function cleanBoilerplate(raw: string): string {
     }
   }
 
-  // ── Find the end of actual content ──
   const endPatterns = [
     /bibliographie/i,
     /webographie/i,
@@ -43,18 +43,46 @@ function cleanBoilerplate(raw: string): string {
     }
   }
 
-  // Slice
   if (startIndex > 0) {
     text = text.substring(startIndex);
   }
   if (endIndex > startIndex) {
-    // Keep some chars after the end anchor to capture the conclusion text
     const adjustedEnd = (endIndex - (startIndex > 0 ? startIndex : 0)) + 3000;
     text = text.substring(0, Math.min(adjustedEnd, text.length));
   }
 
   return text.trim();
 }
+
+/**
+ * Simple non-AI language detection based on common word frequency.
+ */
+function detectLanguage(text: string): "french" | "english" {
+  const sample = text.toLowerCase().slice(0, 10000);
+  const frenchWords = [" le ", " la ", " les ", " et ", " est ", " pour ", " dans "];
+  const englishWords = [" the ", " and ", " is ", " for ", " with ", " that ", " this "];
+
+  let frenchCount = 0;
+  let englishCount = 0;
+
+  frenchWords.forEach(word => {
+    const matches = sample.match(new RegExp(word, 'g'));
+    if (matches) frenchCount += matches.length;
+  });
+
+  englishWords.forEach(word => {
+    const matches = sample.match(new RegExp(word, 'g'));
+    if (matches) englishCount += matches.length;
+  });
+
+  return frenchCount >= englishCount ? "french" : "english";
+}
+
+// ── API Route ────────────────────────────────────────────────
+// Hybrid approach:
+//   - The client extracts text + thumbnail in-browser (no server-side pdfjs/mammoth)
+//   - The client sends the file binary + extracted text via FormData
+//   - This API handles: storage upload, text cleaning, language detection, DB write
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,54 +93,102 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Rate Limit Check
+    const rateLimit = checkUploadRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many uploads. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } }
+      );
+    }
+
+    // Payload Size Limit: Reject payloads larger than 10MB
+    const contentLength = request.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'Payload too large. Maximum upload size is 10MB.' },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const thumbnail = formData.get('thumbnail') as File | null;
     const confirmDeletion = formData.get('confirmDeletion') === 'true';
 
+    // Pre-extracted text from the client (no more server-side PDF parsing!)
+    const extractedText = (formData.get('extractedText') as string) || '';
+    const pageCount = parseInt(formData.get('pageCount') as string || '0', 10);
+    const wordCount = parseInt(formData.get('wordCount') as string || '0', 10);
+
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    // Handle One-Report Policy: Clear previous data if confirmed
+    // ── Handle One-Report Policy Updates ──
+    let existingReportId: string | null = null;
     if (confirmDeletion) {
-      console.log(`Cleaning up existing data for user ${user.id} before new upload...`);
-      const { error: cleanupError } = await deleteUserReports(user.id);
-      if (cleanupError) {
-        console.error('Cleanup failed:', cleanupError);
-        // We continue anyway, but log the error
+      console.log(`Updating existing report files for user ${user.id} before new upload...`);
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('active_report_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.active_report_id) {
+        const { data: existingReport } = await supabase
+          .from('reports')
+          .select('id, file_path, thumbnail_url')
+          .eq('id', profile.active_report_id)
+          .single();
+
+        if (existingReport) {
+          existingReportId = existingReport.id;
+
+          // Remove old files from storage, DO NOT delete DB row
+          if (existingReport.file_path) {
+            const { error: pdfError } = await supabase.storage.from('pfes').remove([existingReport.file_path]);
+            if (pdfError) console.error("Error deleting old PDF:", pdfError);
+          }
+          if (existingReport.thumbnail_url) {
+            try {
+              const urlParts = existingReport.thumbnail_url.split('/');
+              const fileName = urlParts[urlParts.length - 1];
+              const thumbPath = `${user.id}/${fileName}`;
+              const { error: thumbError } = await supabase.storage.from('thumbnails').remove([thumbPath]);
+              if (thumbError) console.error("Error deleting old thumbnail:", thumbError);
+            } catch (e) {}
+          }
+        }
       }
     }
 
-    // 1. Get stats from client
-    const pageCount = parseInt(formData.get('pageCount') as string || '0', 10);
-    const wordCount = parseInt(formData.get('wordCount') as string || '0', 10);
-
-    // 2. Upload PDF to Storage (Private bucket 'pfes')
+    // ── Upload PDF/DOCX to Storage ──
     const timestamp = Date.now();
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const filePath = `${user.id}/${timestamp}_${safeName}`;
 
-    const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+    const { error: pdfUploadError } = await supabase.storage
       .from('pfes')
       .upload(filePath, file, {
         upsert: true,
-        contentType: 'application/pdf'
+        contentType: 'application/octet-stream',
       });
 
     if (pdfUploadError) {
       throw new Error(`PDF Storage Upload failed: ${pdfUploadError.message}`);
     }
 
-    // 3. Upload Thumbnail to Storage (Public bucket 'thumbnails') if present
-    let thumbnailUrl = null;
+    // ── Upload Thumbnail ──
+    let thumbnailUrl: string | null = null;
     if (thumbnail) {
-      const thumbnailPath = `${user.id}/${timestamp}_${safeName.replace('.pdf', '')}_thumb.png`;
+      const thumbnailPath = `${user.id}/${timestamp}_${safeName.replace(/\.(pdf|docx)$/i, '')}_thumb.png`;
       const { error: thumbUploadError } = await supabase.storage
         .from('thumbnails')
         .upload(thumbnailPath, thumbnail, {
           upsert: true,
-          contentType: 'image/png'
+          contentType: 'image/png',
         });
 
       if (!thumbUploadError) {
@@ -125,155 +201,70 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Extract Text from PDF or DOCX
-    const fileName = file.name.toLowerCase();
-    let extractedText = "";
+    // ── Clean text + Detect language (using client-provided text) ──
+    const cleanedText = cleanBoilerplate(extractedText).trim();
+    const detectedLang = detectLanguage(extractedText);
 
-    try {
-      if (fileName.endsWith(".pdf")) {
-        // PDF Extraction
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+    console.log(`Received ${extractedText.length} chars for ${file.name}. Language: ${detectedLang}`);
 
-        // Polyfill for DOMMatrix
-        if (!global.DOMMatrix) {
-          // @ts-ignore
-          global.DOMMatrix = class DOMMatrix {
-            constructor() {}
-            toString() {
-              return "matrix(1, 0, 0, 1, 0, 0)";
-            }
-            multiply() {
-              return this;
-            }
-            translate() {
-              return this;
-            }
-            scale() {
-              return this;
-            }
-          };
-        }
-
-        // @ts-ignore
-        const pdfjsModule = await import("pdfjs-dist/build/pdf.mjs");
-        const pdfjsLib = pdfjsModule.default || pdfjsModule;
-
-        const path = require("path");
-        const { pathToFileURL } = require("url");
-        
-        const workerPath = path.join(
-          process.cwd(),
-          "node_modules/pdfjs-dist/build/pdf.worker.mjs"
-        );
-        
-        // Convert to file:// URL for Windows compatibility
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
-
-        const uint8Array = new Uint8Array(buffer);
-        const loadingTask = pdfjsLib.getDocument({
-          data: uint8Array,
-          useSystemFonts: true,
-          disableFontFace: true,
-        });
-
-        const pdfDocument = await loadingTask.promise;
-        const numPages = pdfDocument.numPages;
-
-        for (let i = 1; i <= numPages; i++) {
-          const page = await pdfDocument.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(" ");
-          extractedText += pageText + "\n\n";
-        }
-      } else if (fileName.endsWith(".docx")) {
-        // DOCX Extraction
-        const mammoth = require("mammoth");
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const result = await mammoth.extractRawText({ buffer });
-        extractedText = result.value;
-      }
-
-      /**
-       * Simple non-AI language detection based on common word frequency
-       */
-      const detectLanguage = (text: string): "french" | "english" => {
-        const sample = text.toLowerCase().slice(0, 10000);
-        const frenchWords = [" le ", " la ", " les ", " et ", " est ", " pour ", " dans "];
-        const englishWords = [" the ", " and ", " is ", " for ", " with ", " that ", " this "];
-        
-        let frenchCount = 0;
-        let englishCount = 0;
-        
-        frenchWords.forEach(word => {
-          const matches = sample.match(new RegExp(word, 'g'));
-          if (matches) frenchCount += matches.length;
-        });
-        
-        englishWords.forEach(word => {
-          const matches = sample.match(new RegExp(word, 'g'));
-          if (matches) englishCount += matches.length;
-        });
-        
-        return frenchCount >= englishCount ? "french" : "english";
-      };
-
-      const detectedLang = detectLanguage(extractedText);
-
-      console.log(`Extracted ${extractedText.length} characters from ${file.name}. Detected language: ${detectedLang}`);
-      
-      // Pass the language to the database insertion
-      (request as any).detectedLang = detectedLang;
-    } catch (extractError: any) {
-      console.error("Text extraction error:", extractError);
-      // Don't fail the upload if extraction fails, just log it
-      extractedText = "";
-    }
-
-    // 5. Save to Database with extracted text
+    // ── Save to Database ──
     const cleanTitle = file.name
       .replace(/\.(pdf|docx)$/i, '')
       .replace(/_/g, ' ')
       .replace(/-/g, ' ');
 
-    const { data: report, error: dbError } = await supabase
-      .from('reports')
-      .insert({
-        user_id: user.id,
-        title: cleanTitle,
-        name: cleanTitle,
-        file_path: filePath,
-        thumbnail_url: thumbnailUrl,
-        page_count: pageCount,
-        word_count: wordCount,
-        size_bytes: file.size,
-        status: 'completed', 
-        data: {},
-        detected_language: (request as any).detectedLang || 'english',
-        extracted_text: cleanBoilerplate(extractedText).trim()
-      })
-      .select()
-      .single();
+    const reportDataPayload = {
+      user_id: user.id,
+      title: cleanTitle,
+      name: cleanTitle,
+      file_path: filePath,
+      thumbnail_url: thumbnailUrl,
+      page_count: pageCount,
+      word_count: wordCount,
+      size_bytes: file.size,
+      status: 'completed',
+      data: {},
+      detected_language: detectedLang,
+      extracted_text: cleanedText,
+    };
 
-    if (dbError) {
-      throw new Error(`Database Insert failed: ${dbError.message}`);
+    let report;
+    let dbError;
+
+    if (existingReportId) {
+      const res = await supabase
+        .from('reports')
+        .update(reportDataPayload)
+        .eq('id', existingReportId)
+        .select()
+        .single();
+      report = res.data;
+      dbError = res.error;
+    } else {
+      const res = await supabase
+        .from('reports')
+        .insert(reportDataPayload)
+        .select()
+        .single();
+      report = res.data;
+      dbError = res.error;
     }
 
-    // 6. Update Profile's active_report_id
+    if (dbError) {
+      throw new Error(`Database Insert/Update failed: ${dbError.message}`);
+    }
+
+    // ── Update Profile ──
     await supabase.from('profiles').update({ active_report_id: report.id }).eq('id', user.id);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       message: 'Upload successful',
       report_id: report.id,
       stats: {
         pages: pageCount,
         words: wordCount,
-        extractedChars: extractedText.length
-       }
+        extractedChars: cleanedText.length,
+      }
     });
 
   } catch (error: any) {

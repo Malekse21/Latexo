@@ -5,6 +5,9 @@ import { GeneratedQuestion } from "@/src/types/session";
 import { LiveSession } from "@/src/types/session";
 import { AGENTS } from "@/src/config/agents";
 import { logGroqCost } from "@/src/config/groq";
+import { checkChatRateLimit } from "@/lib/rate-limit-chat";
+
+export const maxDuration = 60;
 
 // ── Agent-ID ↔ Speaker mapping ──────────────────────────────
 const AGENT_TO_SPEAKER: Record<number, string> = {
@@ -81,8 +84,8 @@ function buildGatekeeperPrompt(
   // Only inject curveball instruction for hostile difficulty
   const curveball = difficulty === "hostile" ? CURVEBALL_INSTRUCTION : "";
 
-  const pivotInstruction = nextAgendaItem
-    ? `Seamlessly pivot to the next topic: "${nextAgendaItem}".`
+  const wrap_up = nextAgendaItem 
+    ? `Since we are moving to the next topic, your response should ONLY be a quick acknowledgment (e.g. "Good answer, let's move on"). Do NOT ask the next question yourself.`
     : `Wrap up gracefully — there are no more topics on the agenda.`;
 
   const limits = { gentle: 1, standard: 2, hostile: 3 };
@@ -92,12 +95,12 @@ function buildGatekeeperPrompt(
   // Dynamically tailor the instructions based on whether they hit the limit
   let followupInstructions = "";
   if (isExhausted) {
-    followupInstructions = `CRITICAL LIMIT REACHED: You have already asked ${followUpsCount} follow-up questions for this topic. You are strictly forbidden from asking any more follow-up questions. You MUST acknowledge the student's final answer, ${pivotInstruction} and set topic_status to "exhausted".`;
+    followupInstructions = `CRITICAL LIMIT REACHED: You have already asked ${followUpsCount} follow-up questions for this topic. You are strictly forbidden from asking any more follow-up questions. You MUST acknowledge the student's final answer briefly in 1 sentence. ${wrap_up} Set topic_status to "exhausted".`;
   } else {
     followupInstructions = `1. Evaluate the student's answer against the CURRENT TOPIC above.
 2. Did they answer it satisfactorily?
    - IF NO: Ask ONE focused follow-up question related SOLELY to this topic. You have asked ${followUpsCount}/${maxFollowUps} follow-ups so far. Set topic_status to "ongoing".
-   - IF YES: Acknowledge their answer briefly, then ${pivotInstruction} Set topic_status to "exhausted".`;
+   - IF YES: Acknowledge their answer briefly in 1 sentence. ${wrap_up} Set topic_status to "exhausted".`;
   }
 
   return `${personaPrompt}
@@ -115,8 +118,9 @@ INSTRUCTIONS:
 ${followupInstructions}
 
 SPEAKING STYLE:
+- Keep your vocabulary simple and your phrasing direct. The questions should be incredibly easy to understand, even if the topic being tested is complex.
 - Respond in 60 to 80 words. Be thorough but not verbose.
-- Start with a natural reaction (e.g. "Hmm, interesting...", "D'accord, je vois...", "That's a fair point, but...").
+- CRITICAL: You MUST vary your opening reaction every single time. NEVER repeat the same opening phrase. Rotate between completely different styles such as: reflective ("Hmm, that's worth examining..."), questioning ("Interesting — so you're saying..."), challenging ("I'm not entirely convinced..."), neutral ("Noted. Let me ask you this..."), surprised ("That's an unexpected approach..."), or direct ("Let's dig deeper into that."). NEVER say "That's a fair point" — that phrase is BANNED.
 - Acknowledge what the student said before challenging or asking.
 - Ask ONE focused question max, with context for WHY you're asking.
 - DO NOT introduce yourself. DO NOT use markdown, bullet points, or numbered lists.
@@ -145,6 +149,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rateLimit = checkChatRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Please wait ${rateLimit.retryAfter} seconds.` },
+        { status: 429 }
+      );
+    }
+
     // ── Parse body ────────────────────────────────────────
     const body: ChatRequest = await request.json();
     const {
@@ -157,6 +169,14 @@ export async function POST(request: NextRequest) {
     if (!student_message || !language || !difficulty) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // LLM Token Limiting Check
+    if (student_message.length > 4000) {
+      return NextResponse.json(
+        { error: "Message too long. Maximum 4000 characters limit exceeded." },
         { status: 400 }
       );
     }
@@ -239,7 +259,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
             { role: "user", content: userPrompt },
           ],
           temperature: 0.5,
-          max_tokens: 500,
+          max_tokens: 1024,
           response_format: { type: "json_object" },
         }),
       }
@@ -258,7 +278,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
     }
 
     if (!content) {
-      console.error("Groq returned empty content", aiData);
+      console.error("Groq returned empty content (payload omitted for privacy)");
       throw new Error("No content received from AI");
     }
 
@@ -280,7 +300,7 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
     try {
       aiResponse = JSON.parse(content);
     } catch (parseError) {
-      console.error("Failed to parse AI JSON:", content);
+      console.error("Failed to parse AI JSON (payload omitted for privacy)");
       aiResponse = {};
     }
 
@@ -292,8 +312,14 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
       difficulty === "hostile" ? "skeptical" : "serious";
 
     // ── Agenda-Pop Logic ──────────────────────────────────
+    let nextQuestionText = null;
+    let nextSpeaker = null;
+
     // If topic_status is "exhausted", advance the Agenda Queue
     if (topicStatus === "exhausted" && nextAvailable) {
+      nextQuestionText = nextAvailable.question;
+      nextSpeaker = AGENT_TO_SPEAKER[nextAvailable.agentId] || "technical";
+      
       console.log(
         `[Agenda] Topic exhausted: "${currentAgendaItem}" → advancing to: "${nextAvailable.question}"`
       );
@@ -339,13 +365,15 @@ Return strict JSON with "speaker", "text", and "topic_status".`;
       });
     }
 
-    // ── Response (same shape as before — no frontend changes) ─
+    // ── Response (includes optional next question) ───────────
     return NextResponse.json({
       success: true,
       jury_response: juryResponse,
       speaker: juryMember,
       expression,
       topic_status: topicStatus,
+      next_question: nextQuestionText,
+      next_speaker: nextSpeaker,
     });
   } catch (error) {
     console.error("Chat API error:", error);

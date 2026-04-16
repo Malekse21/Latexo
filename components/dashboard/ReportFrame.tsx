@@ -35,7 +35,7 @@ export function ReportFrame({ isEmpty, thumbnailUrl, onUploadClick, className }:
                <Upload className="w-6 h-6 text-gray-400 group-hover:text-black" />
             </div>
             <div className="text-center">
-              <p className="font-serif text-lg font-medium text-gray-800">Upload Manuscript</p>
+              <p className="font-serif text-lg font-medium text-gray-800">Upload Rapport</p>
               <p className="text-sm text-gray-500 mt-1">PDF format only</p>
             </div>
           </button>

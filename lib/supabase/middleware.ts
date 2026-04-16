@@ -2,6 +2,27 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
+  // Maintenance mode check
+  const isMaintenanceMode = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === 'true'
+  const isMaintenanceRoute = request.nextUrl.pathname.startsWith('/maintenance')
+
+  // Exclude API routes from redirecting to a UI page to avoid HTML responses
+  // Instead, API routes should just return 503 Service Unavailable if needed, 
+  // but for simplicity we'll just ignore maintenance block for pure API background calls
+  // or we can block them too. Let's redirect everything for now or just pages.
+  if (isMaintenanceMode && !isMaintenanceRoute && !request.nextUrl.pathname.startsWith('/api')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/maintenance'
+    return NextResponse.redirect(url)
+  }
+
+  // If maintenance mode is off but someone tries to view the maintenance page, redirect to home
+  if (!isMaintenanceMode && isMaintenanceRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -15,13 +36,16 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+          })
           supabaseResponse = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => {
+            const { domain, ...restOptions } = options
+            supabaseResponse.cookies.set(name, value, restOptions)
+          })
         },
       },
     }
@@ -34,7 +58,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-
   // Protected routes logic
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
                       request.nextUrl.pathname.startsWith('/signup') ||
@@ -76,7 +99,6 @@ export async function updateSession(request: NextRequest) {
       .single()
       
     const isProfileComplete = profile && profile.university
-
     // 1. If hitting login/signup OR root, redirect to appropriate start page
     if (isAuthRoute || isRootRoute) {
       if (isAuthRoute && request.nextUrl.pathname.startsWith('/auth/callback')) {
@@ -99,6 +121,5 @@ export async function updateSession(request: NextRequest) {
       }
     }
   }
-
   return supabaseResponse
 }

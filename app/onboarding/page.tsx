@@ -14,7 +14,7 @@ type OnboardingData = {
   fullName: string;
   university: string;
   specialty: string;
-  defenseDate: string; // ISO date string (yyyy-mm-dd)
+  defenseDate: string; 
 };
 
 const TUNISIAN_UNIS = [
@@ -269,20 +269,19 @@ export default function OnboardingPage() {
     return str.replace(/\b\w/g, (char) => char.toUpperCase());
   };
 
-  const handleNext = async () => {
+  const handleNext = async () => {    
     if (!isStepValid()) return;
 
     if (step < STEP_COUNT - 1) {
       setStep((prev) => prev + 1);
     } else {
-      // Final submission - Save to Supabase
       setIsSubmitting(true);
       
       try {
         const supabase = createClient();
         
         // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         if (!user) {
           throw new Error('Not authenticated');
@@ -291,17 +290,22 @@ export default function OnboardingPage() {
         // Use user's Google avatar if available
         const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
         
-        // Update profile
-        const { error } = await supabase
+        const updatePayload = {
+          id: user.id,
+          full_name: form.fullName,
+          avatar_url: avatarUrl,
+          university: form.university,
+          specialty: form.specialty,
+          defense_date: form.defenseDate || null,
+          email: user.email,
+        };
+
+
+        // Update profile (using upsert in case the DB trigger on auth.users failed to create the row)
+        const { error, data: updatedData } = await supabase
           .from('profiles')
-          .update({
-            full_name: form.fullName,
-            avatar_url: avatarUrl,
-            university: form.university,
-            specialty: form.specialty,
-            defense_date: form.defenseDate || null,
-          })
-          .eq('id', user.id);
+          .upsert(updatePayload, { onConflict: 'id' })
+          .select();
         
         if (error) throw error;
         
@@ -313,7 +317,7 @@ export default function OnboardingPage() {
           .single();
         
         if (!verifyProfile?.university) {
-          throw new Error('Profile update did not persist');
+          throw new Error('Profile update did not persist in database verification');
         }
         
         // Brief pause for the workspace animation, then hard redirect.
@@ -321,9 +325,9 @@ export default function OnboardingPage() {
         await new Promise((r) => setTimeout(r, 800));
         window.location.replace('/dashboard');
       } catch (error) {
-        console.error('Error saving profile:', error);
+        console.error('=== ERROR SAVING PROFILE ===', error);
         setIsSubmitting(false);
-        alert('Failed to save profile. Please try again.');
+        alert('Failed to save profile. Please check the console log for details and try again.');
       }
     }
   };
@@ -567,14 +571,14 @@ export default function OnboardingPage() {
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <h1 className="text-2xl md:text-3xl font-bold tracking-tighter">
-                        When is your defense date?
+                        When is your soutenance date?
                       </h1>
                     </div>
 
                     <div className="space-y-3">
                       <div className="space-y-1">
                         <label className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500">
-                          Defense date
+                          Soutenance date
                         </label>
                         {/* Minimal monochrome date picker */}
                         <input

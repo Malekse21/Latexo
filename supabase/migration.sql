@@ -13,7 +13,7 @@ create table public.profiles (
   university text,
   specialty text,
   defense_date date,
-  credits int default 12,
+  credits int default 10,
   active_report_id uuid,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -91,7 +91,7 @@ create or replace function public.handle_new_user()
 returns trigger as $$
 begin
   insert into public.profiles (id, credits)
-  values (new.id, 12);
+  values (new.id, 10);
   return new;
 end;
 $$ language plpgsql security definer;

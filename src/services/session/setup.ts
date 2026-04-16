@@ -41,7 +41,6 @@ export async function startSession(
     }
     // Delete the Redis/Live block
     await deleteSession(userId);
-    console.log(`Cleared stale session for user ${userId}. Starting fresh.`);
   }
 
   // ── Step 2: Check and deduct credits ──────────────────
@@ -67,7 +66,7 @@ export async function startSession(
   // ── Step 3: Load report and weak topics ───────────────
   const { data: report, error: reportError } = await supabase
     .from('reports')
-    .select('data, title, extracted_text, past_questions')
+    .select('data, title, extracted_text')
     .eq('id', reportId)
     .single();
 
@@ -140,7 +139,8 @@ export async function startSession(
 
   // ── Step 4: Generate question bank (1 AI call) ────────
   const totalTurns = TURN_COUNT[durationMinutes];
-  const pastQuestions: string[] = report.past_questions || [];
+  // Past questions now live on the user profile, not the report
+  const pastQuestions: string[] = profileData?.memory?.past_questions || [];
   const questionBank = await generateQuestionBank(
     pdfContext,
     memorySnapshot,
@@ -165,6 +165,19 @@ export async function startSession(
     throw new Error(`SESSION_CREATE_FAILED: ${simError?.message}`);
   }
 
+  // Shuffle the first 3 questions to randomize the starting agent but maintain general interleaving
+  if (questionBank.length >= 3) {
+    const firstThree = questionBank.splice(0, 3);
+    // Simple random shuffle for the first 3 elements
+    for (let i = firstThree.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [firstThree[i], firstThree[j]] = [firstThree[j], firstThree[i]];
+    }
+    questionBank.unshift(...firstThree);
+  } else if (questionBank.length > 0) {
+    questionBank.sort(() => Math.random() - 0.5);
+  }
+
   // ── Step 6: Store live state ──────────────────────────
   const firstQuestion = questionBank[0];
   const session: LiveSession = {
@@ -178,7 +191,7 @@ export async function startSession(
     extraQuestions: [],
     lastAnswers: [],
     currentQuestion: firstQuestion,
-    currentAgentId: 0,         // always start with Malek
+    currentAgentId: firstQuestion.agentId, // Start with the randomly selected first agent
     turnCount: 0,
     followUpsCount: 0,
     adaptiveCallsUsed: 0,
@@ -195,7 +208,7 @@ export async function startSession(
     .from('turns')
     .insert({
       simulation_id: dbSim.id,
-      agent_id: 0,
+      agent_id: firstQuestion.agentId,
       question: firstQuestion.question,
       is_follow_up: false,
       was_interrupted: false,
@@ -205,8 +218,8 @@ export async function startSession(
   return {
     sessionId: dbSim.id,
     firstQuestion: firstQuestion.question,
-    agentId: 0,
-    agentName: AGENTS[0].name,
+    agentId: firstQuestion.agentId,
+    agentName: AGENTS[firstQuestion.agentId]?.name || AGENTS[0].name,
     totalTurns,
     creditsDeducted: cost,
   };
@@ -271,11 +284,12 @@ Generate exactly ${totalTurns} questions split across 3 agents:
 
 Rules:
 1. Mix difficulties: ${difficultyDistribution}
-2. If an AI evaluation note is provided, generate harder questions targeting those weak areas
-3. Each question must be answerable from the project context
-4. Questions must be realistic jury questions — direct, under 2 sentences
-5. CRITICAL: Generate entirely NEW questions. Do NOT ask any question that is semantically similar to the PREVIOUSLY ASKED QUESTIONS listed above
-6. CRITICAL: Interleave the agent IDs so talking turns alternate naturally (e.g. 0,1,2,0,1,2,...). Do NOT group all questions from one agent together
+2. Use very clear, simple vocabulary and phrasing (in French or English). The concept can be hard, but the text itself must be extremely easy to understand. Do not use convoluted, archaic, or overly flowery academic words.
+3. If an AI evaluation note is provided, generate harder questions targeting those weak areas
+4. Each question must be answerable from the project context
+5. Questions must be realistic jury questions — direct, under 2 sentences
+6. CRITICAL: Generate entirely NEW questions. Do NOT ask any question that is semantically similar to the PREVIOUSLY ASKED QUESTIONS listed above
+7. CRITICAL: Interleave the agent IDs so talking turns alternate naturally (e.g. 0,1,2,0,1,2,...). Do NOT group all questions from one agent together
 
 Return ONLY a valid JSON object with a "questions" array:
 {"questions": [{

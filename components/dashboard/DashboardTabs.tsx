@@ -2,14 +2,16 @@
 
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { useUser } from "@/lib/context/user-context";
 
-interface DashboardTabsProps {
-  activeTab: 'briefing' | 'defense' | 'aftermath' | null;
-  onTabChange: (tab: 'briefing' | 'defense' | 'aftermath') => void;
-  t: (key: string) => string;
+export interface DashboardTabsProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
-export function DashboardTabs({ activeTab, onTabChange, t }: DashboardTabsProps) {
+export function DashboardTabs({ activeTab, onTabChange }: DashboardTabsProps) {
+  const { t } = useUser();
+
   const tabs = [
     { id: 'briefing', label: t('dashboard.tabs.briefing') },
     { id: 'defense', label: t('dashboard.tabs.defense') },
@@ -20,13 +22,13 @@ export function DashboardTabs({ activeTab, onTabChange, t }: DashboardTabsProps)
     <div className="w-full flex justify-center border-b border-gray-200 bg-white">
       <div className="flex items-center gap-6 md:gap-16">
         {tabs.map((tab) => {
-          const isActive = activeTab === tab.id || (tab.id === 'briefing' && activeTab === null);
+          const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id as 'briefing' | 'defense' | 'aftermath')}
+              onClick={() => onTabChange(tab.id)}
               className={cn(
-                "relative pb-3 px-2 text-[10px] md:text-sm uppercase tracking-widest transition-colors whitespace-nowrap",
+                "relative pb-3 px-2 text-[10px] md:text-sm uppercase tracking-widest transition-colors whitespace-nowrap cursor-pointer",
                 isActive 
                   ? "font-bold text-black" 
                   : "text-gray-400 hover:text-gray-600"

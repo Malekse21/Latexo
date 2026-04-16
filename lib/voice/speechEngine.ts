@@ -71,24 +71,18 @@ export function createSpeechRecognition(
 
   // Add detailed event logging
   recognition.onstart = () => {
-    console.log("🎙️ Recognition started, waiting for audio...");
   };
 
   recognition.onaudiostart = () => {
-    console.log("🔊 Audio capture started!");
   };
 
   recognition.onsoundstart = () => {
-    console.log("🔉 Sound detected!");
   };
 
   recognition.onspeechstart = () => {
-    console.log("🗣️ Speech detected!");
   };
 
   recognition.onresult = (event: any) => {
-    console.log("📊 Results received, count:", event.results.length);
-    
     // Accumulate full transcript from all segments
     let fullTranscript = "";
     let isFinal = false;
@@ -103,26 +97,20 @@ export function createSpeechRecognition(
     // In continuous mode, we treat the stream as "final" only when the user explicitly stops
     // But we pass the isFinal flag of the current chunk for internal distinctness if needed
     // For the UI, we just want to show the full text growing
-    
-    console.log(`📝 Transcript:`, fullTranscript);
     onResult(fullTranscript, isFinal);
   };
 
   recognition.onspeechend = () => {
-    console.log("🤐 Speech ended (pause detected)");
     // In continuous mode, this doesn't mean recognition stops
   };
 
   recognition.onsoundend = () => {
-    console.log("🔇 Sound ended");
   };
 
   recognition.onaudioend = () => {
-    console.log("🔴 Audio capture ended");
   };
 
   recognition.onend = () => {
-    console.log("⏹️ Recognition session ended");
     onEnd();
   };
 
@@ -132,7 +120,6 @@ export function createSpeechRecognition(
   };
 
   recognition.onnomatch = () => {
-    console.warn("⚠️ No speech match - speech heard but not recognized");
   };
 
   return recognition;

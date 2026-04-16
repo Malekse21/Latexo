@@ -1,51 +1,82 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { ReportFrame } from "@/components/dashboard/ReportFrame";
+import { UploadModal } from "@/components/dashboard/UploadModal";
 import { Clock, ArrowRight, Sparkles, TrendingDown } from "lucide-react";
 import Image from "next/image";
+import { usePaymentModal } from "@/lib/hooks/usePaymentModal";
+import { useRouter, usePathname } from "next/navigation";
+import { useUser } from "@/lib/context/user-context";
+import type { DashboardProfile, DashboardReport } from "@/lib/types/dashboard";
 
-interface Report {
-  id: string;
-  title: string;
-  name: string;
-  created_at: string;
-  page_count: number;
-  word_count: number;
-  thumbnail_url?: string;
-  detected_language?: string;
-  language?: string;
-}
-
-interface CardsViewProps {
-  profile: any;
-  activeReport: Report | null;
-  greeting: string;
+export interface CardsViewProps {
+  profile: DashboardProfile;
+  activeReport: DashboardReport | null;
   daysUntilDefense: number;
   readinessScore: number | null;
   projectedScore: number | null;
   lastGrade: number | null;
   memorySnapshot: string | null;
-  onUploadClick: () => void;
-  onNavigateToDefense: () => void;
-  t: (key: string, params?: any) => any;
 }
 
 export function CardsView({
   profile,
   activeReport,
-  greeting,
   daysUntilDefense,
   readinessScore,
   projectedScore,
   lastGrade,
-  memorySnapshot,
-  onUploadClick,
-  onNavigateToDefense,
-  t
+  memorySnapshot
 }: CardsViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { t, language, refreshProfile } = useUser();
+  const { open: openPaymentModal } = usePaymentModal();
+  
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [greeting, setGreeting] = useState("");
+
   const bestScore = profile?.best_score || 0;
   const gap = lastGrade !== null ? bestScore - lastGrade : 0;
   const hasSessionData = lastGrade !== null && bestScore > 0;
+
+  // Generate Greeting Internally
+  useEffect(() => {
+    const hour = new Date().getHours();
+    let greetingKey = "dashboard.greetings.morning";
+    if (hour >= 12 && hour < 18) greetingKey = "dashboard.greetings.afternoon";
+    else if (hour >= 18) greetingKey = "dashboard.greetings.evening";
+
+    const localizedGreeting = t(greetingKey);
+    if (localizedGreeting !== greetingKey) {
+      setGreeting(localizedGreeting);
+    } else {
+      if (hour >= 12 && hour < 18) setGreeting(language === "fr" ? "Bonjour" : "Good afternoon");
+      else if (hour >= 18) setGreeting(language === "fr" ? "Bonsoir" : "Good evening");
+      else setGreeting(language === "fr" ? "Bonjour" : "Good morning");
+    }
+  }, [language, t]);
+
+  const handleNavigateToDefense = () => {
+    router.push(`${pathname}?tab=defense`);
+  };
+
+  const handleSimulateClick = () => {
+    const credits = profile?.credits || 0;
+    const sessionCost = 10; // Minimum session cost
+    if (credits < sessionCost) {
+      openPaymentModal('credits-wall', sessionCost);
+    } else {
+      handleNavigateToDefense();
+    }
+  };
+
+  const handleUploadComplete = async () => {
+    setIsUploadModalOpen(false);
+    await refreshProfile();
+    router.refresh();
+  };
 
   return (
     <div className="flex flex-col h-auto md:h-[calc(100vh-200px)]">
@@ -74,7 +105,7 @@ export function CardsView({
           <ReportFrame 
             isEmpty={!activeReport}
             thumbnailUrl={activeReport?.thumbnail_url}
-            onUploadClick={onUploadClick}
+            onUploadClick={() => setIsUploadModalOpen(true)}
             className="shadow-xl w-full max-w-[320px] sm:max-w-[400px] lg:w-[320px]"
           />
         </div>
@@ -88,7 +119,7 @@ export function CardsView({
               <>
                 {/* Top row: label + score + mention */}
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                  <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">{t("dashboard.readiness")}</span>
                 </div>
 
                 {/* Big score */}
@@ -106,12 +137,12 @@ export function CardsView({
                   <div className="absolute top-0 h-full w-px bg-zinc-300" style={{ left: '85%' }} />
                 </div>
                 <div className="flex justify-between items-center mt-1">
-                  <p className="text-[9px] text-zinc-400 font-mono tracking-wide">cible: 85+</p>
+                  <p className="text-[9px] text-zinc-400 font-mono tracking-wide">{t("dashboard.target")}</p>
                 </div>
               </>
             ) : (
               <>
-                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">Readiness</span>
+                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-[0.2em] font-mono">{t("dashboard.readiness")}</span>
                 <div className="flex items-baseline gap-1.5 mt-2 mb-2">
                   <span className="text-3xl font-black tabular-nums tracking-tighter leading-none text-zinc-200">—</span>
                   <span className="text-lg font-black text-zinc-100">/100</span>
@@ -147,7 +178,7 @@ export function CardsView({
 
           {/* ── Section 3: Performance + CTA ──────────────────── */}
           <div className="border border-t-0 border-zinc-200 p-4">
-            <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">Performance</span>
+            <span className="text-[10px] text-zinc-500 uppercase font-extrabold tracking-[0.2em] font-mono">{t("dashboard.performance")}</span>
 
             {hasSessionData && (
               <div className="mt-4">
@@ -184,7 +215,7 @@ export function CardsView({
 
             {/* CTA — Always visible */}
             <button
-              onClick={onNavigateToDefense}
+              onClick={handleSimulateClick}
               className="w-full flex items-center justify-center gap-2.5 py-3 bg-black text-white text-xs font-bold font-mono uppercase tracking-widest hover:bg-zinc-800 transition-all duration-200 cursor-pointer group mt-2"
             >
               <span>{t('dashboard.cta_simulate')}</span>
@@ -193,6 +224,12 @@ export function CardsView({
           </div>
         </div>
       </div>
+      
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onComplete={handleUploadComplete}
+      />
     </div>
   );
 }

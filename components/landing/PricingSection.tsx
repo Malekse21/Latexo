@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
 
 export default function PricingSection() {
   return (
@@ -9,64 +8,54 @@ export default function PricingSection() {
       <div className="container mx-auto px-4">
         
         <div className="text-center mb-16 space-y-4">
-          <h2 className="text-4xl font-black uppercase tracking-tighter">Load Your Arsenal</h2>
+          <h2 className="text-4xl font-black uppercase tracking-tighter">Choose Your Arsenal</h2>
           <p className="text-lg text-neutral-600 font-medium">Simple credit packs. No subscriptions. Pay as you go.</p>
+          
+          <div className="max-w-4xl mx-auto pt-8">
+            <div className="flex flex-col md:flex-row items-stretch justify-center border-[3px] border-black bg-white shadow-[8px_8px_0px_#000000]">
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 border-b-[3px] md:border-b-0 md:border-r-[3px] border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">10 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">5 MIN SIMULATION</span>
+              </div>
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 border-b-[3px] md:border-b-0 md:border-r-[3px] border-black bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">20 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">15 MIN SIMULATION</span>
+              </div>
+              <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                <span className="text-lg font-black uppercase tracking-tighter">30 CREDITS</span>
+                <span className="text-neutral-400 font-mono font-bold">→</span>
+                <span className="text-sm font-bold uppercase tracking-widest text-neutral-600">30 MIN SIMULATION</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-center">
           
-          {/* Pack 1 */}
+          {/* Starter Pack */}
           <PricingCard 
-             title="Starter Pack"
-             credits="150"
-             price="15 TND"
-             description="Perfect for a quick dry run."
-             features={["1 Full Simulation", "Basic Report Analysis", "Standard Jury Persona"]}
+             title="Starter"
+             credits="30"
+             price="9 DT"
           />
 
-          {/* Pack 2 - Featured */}
+          {/* Defense Pack - Most Popular */}
           <PricingCard 
-             title="Pro Survival"
-             credits="350"
-             price="30 TND"
-             description="The complete training protocol."
-             features={["3 Full Simulations", "Deep Methodology Audit", "All 3 Jury Personas", "Recording & Transcript"]}
+             title="Defense"
+             credits="80"
+             price="19 DT"
              highlight
+             badge="Most Popular"
           />
 
-           {/* Referral Pack */}
-           <div className="border-[3px] border-black p-8 bg-neutral-100 flex flex-col justify-between shadow-[8px_8px_0px_#000000] relative overflow-hidden">
-             {/* Diagonal Banner */}
-             <div className="absolute top-6 -right-8 bg-black text-white text-[10px] uppercase font-bold px-8 py-1 rotate-45 w-40 text-center">
-                Free
-             </div>
-
-             <div className="space-y-4">
-                 <h3 className="text-2xl font-black uppercase tracking-tight">Referral Protocol</h3>
-                 <div className="text-5xl font-black tracking-tighter">
-                    +10 <span className="text-lg font-bold">Credits</span>
-                 </div>
-                 <p className="text-sm font-medium text-neutral-600 leading-relaxed">
-                    Recruit a fellow student to the platform.
-                 </p>
-                 <ul className="space-y-3 mt-6">
-                    <li className="flex items-start gap-3 text-sm font-medium">
-                        <Check className="w-4 h-4 mt-0.5 shrink-0" />
-                        <span>They get 10 credits</span>
-                    </li>
-                    <li className="flex items-start gap-3 text-sm font-medium">
-                        <Check className="w-4 h-4 mt-0.5 shrink-0" />
-                        <span>You get 10 credits</span>
-                    </li>
-                 </ul>
-             </div>
-             
-             <div className="mt-8">
-                 <Button className="w-full bg-white text-black border-2 border-black hover:bg-neutral-50 rounded-none h-12 font-bold uppercase tracking-wide">
-                    Get Referral Link
-                 </Button>
-             </div>
-           </div>
+           {/* Serious Pack */}
+          <PricingCard 
+             title="Serious"
+             credits="200"
+             price="39 DT"
+          />
 
         </div>
 
@@ -75,34 +64,41 @@ export default function PricingSection() {
   );
 }
 
-function PricingCard({ title, credits, price, features, description, highlight = false }: { title: string, credits: string, price: string, features: string[], description: string, highlight?: boolean }) {
+function PricingCard({ 
+  title, 
+  credits, 
+  price,  
+  highlight = false,
+  badge
+}: { 
+  title: string, 
+  credits: string, 
+  price: string, 
+  highlight?: boolean,
+  badge?: string
+}) {
     return (
-        <div className={`border-[3px] border-black p-8 flex flex-col justify-between shadow-[8px_8px_0px_#000000] relative ${highlight ? 'bg-black text-white' : 'bg-white text-black'}`}>
-            <div className="space-y-4">
+        <div className={`border-[3px] border-black p-8 flex flex-col justify-between shadow-[8px_8px_0px_#000000] relative transition-transform duration-200 ${highlight ? 'bg-black text-white md:scale-105 z-10' : 'bg-white text-black hover:-translate-y-1'}`}>
+            
+            {badge && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-white text-black border-2 border-black text-xs uppercase font-black px-4 py-1 tracking-wider whitespace-nowrap">
+                  {badge}
+              </div>
+            )}
+
+            <div className="space-y-4 text-center">
                 <h3 className="text-2xl font-black uppercase tracking-tight">{title}</h3>
                 <div className="text-5xl font-black tracking-tighter">
                    {credits} <span className="text-lg font-bold">Credits</span>
                 </div>
-                <div className={`text-xl font-bold font-mono ${highlight ? 'text-neutral-300' : 'text-neutral-500'}`}>
+                <div className={`text-3xl font-black ${highlight ? 'text-white' : 'text-black'}`}>
                     {price}
                 </div>
-                <p className={`text-sm font-medium leading-relaxed ${highlight ? 'text-neutral-400' : 'text-neutral-600'}`}>
-                   {description}
-                </p>
-
-                <ul className="space-y-3 mt-8">
-                    {features.map((feature, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm font-medium">
-                            <Check className={`w-4 h-4 mt-0.5 shrink-0 ${highlight ? 'text-white' : 'text-black'}`} />
-                            <span>{feature}</span>
-                        </li>
-                    ))}
-                </ul>
             </div>
 
             <div className="mt-8">
                 <Button className={`w-full h-12 font-bold uppercase tracking-wide rounded-none border-2 border-black transition-transform active:translate-y-1 ${highlight ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'}`}>
-                    Choose Pack
+                    {'Choose Pack'}
                 </Button>
             </div>
         </div>

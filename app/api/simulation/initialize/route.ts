@@ -163,18 +163,43 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Fallback to standard greeting — session-aware, no "give us an overview" (first dynamic question handles that)
+      // Fallback to standard greeting — session-aware, randomized to avoid repetition
       if (!firstJuryMessage) {
         const isReturning = attemptNumber > 1;
+        const greetings = selectedLanguage === 'french'
+          ? isReturning
+            ? [
+                'Bon retour. Le jury a pris connaissance de votre travail. Nous allons commencer.',
+                'Ravi de vous revoir. Nous avons relu votre rapport, allons-y.',
+                'Content de vous retrouver. Le jury est prêt, commençons sans tarder.',
+                'Vous revoilà. Nous avons examiné vos travaux, passons aux questions.',
+                'Bienvenue à nouveau. Le jury vous attend, nous pouvons débuter.',
+              ]
+            : [
+                'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer.',
+                'Bonjour et bienvenue. Le jury a étudié votre rapport, nous pouvons commencer.',
+                'Bienvenue. Prenez place, le jury est prêt à vous entendre.',
+                'Bonjour. Nous avons analysé votre travail avec attention. Commençons.',
+                'Bienvenue à cette soutenance. Le jury a lu votre rapport, allons-y.',
+              ]
+          : isReturning
+            ? [
+                'Welcome back. The jury has reviewed your work. Let\'s begin.',
+                'Good to see you again. We\'ve gone over your report, let\'s get started.',
+                'Welcome back. The panel is ready, let\'s proceed.',
+                'Glad to have you back. We\'ve reviewed your work, let\'s begin the questions.',
+                'Welcome again. The jury has studied your report. Let\'s start.',
+              ]
+            : [
+                'Welcome to your defense. We have reviewed your work and are ready to begin.',
+                'Good day. The jury has studied your report. Let\'s get started.',
+                'Welcome. Please take your seat, the panel is ready to hear you.',
+                'Hello and welcome to your defense. We\'ve reviewed everything, let\'s begin.',
+                'Welcome to this defense session. The jury has read your report. Let\'s proceed.',
+              ];
         firstJuryMessage = {
           speaker: 'academic',
-          text: selectedLanguage === 'french'
-            ? isReturning
-              ? 'Bon retour. Le jury a pris connaissance de votre travail. Nous allons commencer.'
-              : 'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer.'
-            : isReturning
-              ? 'Welcome back. The jury has reviewed your work. Let\'s begin.'
-              : 'Welcome to your defense. We have reviewed your work and are ready to begin.',
+          text: greetings[Math.floor(Math.random() * greetings.length)],
           emotion: 'serious'
         };
       }
@@ -281,18 +306,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback to standard greeting — session-aware, no "give us an overview"
+    // Fallback to standard greeting — session-aware, randomized to avoid repetition
     if (!firstJuryMessage) {
       const isReturning = attemptNumber > 1;
+      const greetings = selectedLanguage === 'french'
+        ? isReturning
+          ? [
+              'Bon retour. Le jury a pris connaissance de votre travail. Nous allons commencer.',
+              'Ravi de vous revoir. Nous avons relu votre rapport, allons-y.',
+              'Content de vous retrouver. Le jury est prêt, commençons sans tarder.',
+              'Vous revoilà. Nous avons examiné vos travaux, passons aux questions.',
+              'Bienvenue à nouveau. Le jury vous attend, nous pouvons débuter.',
+            ]
+          : [
+              'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer.',
+              'Bonjour et bienvenue. Le jury a étudié votre rapport, nous pouvons commencer.',
+              'Bienvenue. Prenez place, le jury est prêt à vous entendre.',
+              'Bonjour. Nous avons analysé votre travail avec attention. Commençons.',
+              'Bienvenue à cette soutenance. Le jury a lu votre rapport, allons-y.',
+            ]
+        : isReturning
+          ? [
+              'Welcome back. The jury has reviewed your work. Let\'s begin.',
+              'Good to see you again. We\'ve gone over your report, let\'s get started.',
+              'Welcome back. The panel is ready, let\'s proceed.',
+              'Glad to have you back. We\'ve reviewed your work, let\'s begin the questions.',
+              'Welcome again. The jury has studied your report. Let\'s start.',
+            ]
+          : [
+              'Welcome to your defense. We have reviewed your work and are ready to begin.',
+              'Good day. The jury has studied your report. Let\'s get started.',
+              'Welcome. Please take your seat, the panel is ready to hear you.',
+              'Hello and welcome to your defense. We\'ve reviewed everything, let\'s begin.',
+              'Welcome to this defense session. The jury has read your report. Let\'s proceed.',
+            ];
       firstJuryMessage = {
         speaker: 'academic',
-        text: selectedLanguage === 'french'
-          ? isReturning
-            ? 'Bon retour. Le jury a pris connaissance de votre travail. Nous allons commencer.'
-            : 'Bienvenue à votre soutenance. Nous avons examiné votre travail et sommes prêts à commencer.'
-          : isReturning
-            ? 'Welcome back. The jury has reviewed your work. Let\'s begin.'
-            : 'Welcome to your defense. We have reviewed your work and are ready to begin.',
+        text: greetings[Math.floor(Math.random() * greetings.length)],
         emotion: 'serious'
       };
     }

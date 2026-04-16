@@ -11,12 +11,12 @@ export const TURN_COUNT: Record<SessionDuration, number> = {
 };
 
 export const CREDIT_COST: Record<SessionDuration, number> = {
-  5: 8,     // 6 turns + 2 evaluation
-  15: 14,   // 12 turns + 2 evaluation
-  20: 18,   // 16 turns + 2 evaluation
-  30: 22,   // 20 turns + 2 evaluation
-  45: 32,   // 30 turns + 2 evaluation
-  60: 42    // 40 turns + 2 evaluation
+  5: 10,     // 10 credits for 5 mins
+  15: 20,    // 20 credits for 15 mins
+  20: 25,    // extrapolated
+  30: 30,    // 30 credits for 30 mins
+  45: 45,    // extrapolated
+  60: 60     // extrapolated
 };
 
 // ── Agent ─────────────────────────────────────────────────

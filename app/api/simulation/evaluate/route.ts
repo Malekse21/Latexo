@@ -17,6 +17,7 @@ interface EvaluateRequest {
     language: string;
     durationMinutes: number;
   };
+  timezoneOffset?: number;
 }
 
 interface BehavioralStats {
@@ -71,8 +72,10 @@ ${transcriptText}
 
 ## CRITICAL GRADING RULES (MUST FOLLOW):
 - If the student barely spoke, gave only one-word answers, or remained completely silent, you MUST assign a FAILING grade (0-4 out of 20) and set ALL proficiency scores below 10. Do NOT give them the benefit of the doubt.
-- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. Count how much the student spoke vs the jury. If the student's contribution is negligible, the grade MUST reflect that.
-- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20. Only substantive, detailed answers merit 10+/20.
+- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. If the student uses generic buzzwords without deep technical or business justification, severely penalize their score.
+- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20.
+- Mediocre or merely "okay" answers without strong argumentation should be graded strictly around 9-11/20.
+- Only exceptional, highly detailed answers that prove mastery of the subject matter merit a grade of 14+/20. Do NOT hand out high grades easily.
 
 Tasks:
 1. Grade: Assign a final grade out of 20.0 (one decimal place). Be strict and fair.
@@ -88,7 +91,7 @@ Output Format (Strict JSON only, no markdown, no explanation):
   "proficiency": { "tech": <0-100>, "acad": <0-100>, "biz": <0-100> },
   "jury_feedback": {
     "tech": { "comment": "...", "tip": "..." },
-    "strict": { "comment": "...", "tip": "..." },
+    "academic": { "comment": "...", "tip": "..." },
     "business": { "comment": "...", "tip": "..." }
   },
   "memory_update": "..."
@@ -150,8 +153,8 @@ Output Format (Strict JSON only, no markdown, no explanation):
         tip: parsed.jury_feedback?.tech?.tip || "No tip available.",
       },
       strict: {
-        comment: parsed.jury_feedback?.strict?.comment || "No comment available.",
-        tip: parsed.jury_feedback?.strict?.tip || "No tip available.",
+        comment: parsed.jury_feedback?.academic?.comment || parsed.jury_feedback?.strict?.comment || "No comment available.",
+        tip: parsed.jury_feedback?.academic?.tip || parsed.jury_feedback?.strict?.tip || "No tip available.",
       },
       business: {
         comment: parsed.jury_feedback?.business?.comment || "No comment available.",
@@ -256,7 +259,6 @@ export async function POST(request: NextRequest) {
         jury_feedback: evaluation.jury_feedback,
         feedback: evaluation.jury_feedback,
         transcript,
-        sticker_caption: null,
         memory_snapshot: evaluation.memory_update,
       })
       .eq("id", simulationId)
@@ -272,9 +274,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Update profile — dedicated columns + lean memory
+    // Merge past_questions into profile memory (user-scoped, not report-scoped)
+    const existingPastQuestions: string[] = pastMemory?.past_questions || [];
+    const newQuestions: string[] = liveSession?.questionsAskedTexts || [];
+    const combinedQuestions = [...existingPastQuestions, ...newQuestions];
+    // Keep only the last 60 questions to avoid prompt bloat
+    const trimmedQuestions = combinedQuestions.slice(-60);
+
     const updatedMemory = {
       ...pastMemory,
       last_note: evaluation.memory_update,
+      past_questions: trimmedQuestions,
     };
     // Remove legacy duplicates from memory blob
     delete updatedMemory.last_session;
@@ -283,15 +293,20 @@ export async function POST(request: NextRequest) {
 
     // Step 6b: Calculate streak
     const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const timezoneOffsetMs = (body.timezoneOffset || 0) * 60000;
+    // Shift timestamps by the client's offset so getUTCDate() aligns with their local day
+    const nowLocalUTC = new Date(now.getTime() - timezoneOffsetMs);
+    const todayLocalUTC = new Date(Date.UTC(nowLocalUTC.getUTCFullYear(), nowLocalUTC.getUTCMonth(), nowLocalUTC.getUTCDate()));
     
     let currentStreak = profileData?.current_streak || 0;
     let longestStreak = profileData?.longest_streak || 0;
     const lastSessionDate = profileData?.last_session ? new Date(profileData.last_session) : null;
 
     if (lastSessionDate) {
-      const lastUTC = new Date(Date.UTC(lastSessionDate.getUTCFullYear(), lastSessionDate.getUTCMonth(), lastSessionDate.getUTCDate()));
-      const diffDays = Math.floor((todayUTC.getTime() - lastUTC.getTime()) / (1000 * 60 * 60 * 24));
+      const lastLocalUTCBase = new Date(lastSessionDate.getTime() - timezoneOffsetMs);
+      const lastLocalUTC = new Date(Date.UTC(lastLocalUTCBase.getUTCFullYear(), lastLocalUTCBase.getUTCMonth(), lastLocalUTCBase.getUTCDate()));
+      
+      const diffDays = Math.round((todayLocalUTC.getTime() - lastLocalUTC.getTime()) / (1000 * 60 * 60 * 24));
 
       if (diffDays === 0) {
         // Already practiced today — streak stays the same
@@ -322,36 +337,16 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", user.id);
 
-    // Step 5: Save asked questions to report for cross-simulation continuity
+    // Step 7: Cleanup and pruning (questions already saved to profile memory above)
     try {
-      if (liveSession && liveSession.questionsAskedTexts?.length > 0) {
-        // Fetch current past_questions from the report
-        const { data: reportForHistory } = await supabase
-          .from("reports")
-          .select("past_questions")
-          .eq("id", report_id)
-          .single();
-
-        const existingPastQuestions: string[] = reportForHistory?.past_questions || [];
-        const combined = [...existingPastQuestions, ...liveSession.questionsAskedTexts];
-        // Keep only the last 60 questions to avoid prompt bloat
-        const trimmed = combined.slice(-60);
-
-        await supabase
-          .from("reports")
-          .update({ past_questions: trimmed })
-          .eq("id", report_id);
-      }
-
       // Clean up live session
       await deleteSession(user.id);
 
-      // --- PRUNING LOGIC: Keep only the 3 most recent simulations ---
+      // --- PRUNING LOGIC: Keep only the 3 most recent simulations per user (global) ---
       const { data: allSims } = await supabase
         .from("simulations")
         .select("id")
         .eq("user_id", user.id)
-        .eq("report_id", report_id)
         .order("created_at", { ascending: false });
 
       if (allSims && allSims.length > 3) {
@@ -385,7 +380,6 @@ export async function POST(request: NextRequest) {
         proficiency: evaluation.proficiency,
       },
       feedback: evaluation.jury_feedback,
-      sticker_caption: null,
       memory_update: evaluation.memory_update,
     });
   } catch (error) {
