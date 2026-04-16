@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUser } from "@/lib/context/user-context";
 import { createClient } from "@/lib/supabase/client";
-import { Loader2, AlertTriangle, X, Shield, Swords, Flame, Mic, Square, ArrowRight, Lock, Chrome } from "lucide-react";
+import { Loader2, AlertTriangle, X, Shield, Swords, Flame, Mic, Square, ArrowRight, Lock, Chrome, Monitor } from "lucide-react";
 
 import { TalkingAvatar } from "@/components/dashboard/TalkingAvatar";
 import { VoiceWaveform } from "@/components/dashboard/VoiceWaveform";
@@ -189,10 +189,26 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
   // Config phase enhancements
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isChrome, setIsChrome] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
   const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [liveSimulations, setLiveSimulations] = useState(0);
+
+  // Mobile device detection (User-Agent based, not width)
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  useEffect(() => {
+    const detectMobile = (): boolean => {
+      // Modern API (Chrome 93+, Edge 93+)
+      if (typeof navigator !== 'undefined' && (navigator as any).userAgentData) {
+        return !!(navigator as any).userAgentData.mobile;
+      }
+      // Fallback: classic User-Agent regex
+      if (typeof navigator !== 'undefined') {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile/i.test(navigator.userAgent);
+      }
+      return false;
+    };
+    setIsMobileDevice(detectMobile());
+  }, []);
 
   // New Mic Test state
   const [micStatus, setMicStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -386,21 +402,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     }
   };
 
-  // Detect browser and device on mount
+  // Detect browser on mount
   useEffect(() => {
     const isChromium = !!(window as any).chrome;
     const isEdge = navigator.userAgent.indexOf("Edg") !== -1;
     setIsChrome(isChromium && !isEdge);
-
-    const checkMobile = () => {
-      const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
-      return mobileRegex.test(navigator.userAgent) || window.innerWidth < 768;
-    };
-    setIsMobile(checkMobile());
-    
-    const handleResize = () => setIsMobile(checkMobile());
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Handle Keyboard Spacebar for Mic Toggle
@@ -487,10 +493,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               const mappedLang = isFrench ? 'french' : 'english';
               setReportLanguage(mappedLang);
               setConfig(prev => ({ ...prev, language: mappedLang }));
-            } else {
-              const fallbackLang = initialLanguage || (language === "fr" ? "french" : "english");
-              setReportLanguage(fallbackLang);
-              setConfig(prev => ({ ...prev, language: fallbackLang }));
             }
           }
         } catch {}
@@ -751,11 +753,9 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         const pool = langMatched.length > 0 ? langMatched : voices;
 
         // Keywords to find female voices (for Souad)
-        // Added 'zira', 'hazel', 'susan', etc for Windows
-        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria', 'zira', 'hazel', 'susan', 'catherine', 'karen', 'tessa', 'moira'];
+        const femaleKeywords = ['aurélie', 'amélie', 'audrey', 'marie', 'hortense', 'julie', 'caroline', 'denise', 'female', 'woman', 'samantha', 'victoria'];
         // Keywords to find male voices
-        // Added 'david', 'mark', 'richard', etc for Windows
-        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred', 'david', 'mark', 'richard', 'george', 'arthur', 'martin'];
+        const maleKeywords = ['thomas', 'jacques', 'nicolas', 'paul', 'claude', 'henri', 'daniel', 'male', 'man', 'alex', 'fred'];
         
         const findVoice = (keywords: string[], exclude?: SpeechSynthesisVoice | null): SpeechSynthesisVoice | null => {
           for (const kw of keywords) {
@@ -767,48 +767,36 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           return null;
         };
 
-        const getNonFemaleVoices = () => {
-          return pool.filter(v => {
-            const name = v.name.toLowerCase();
-            return !femaleKeywords.some(kw => name.includes(kw));
-          });
-        };
-
         let selectedVoice: SpeechSynthesisVoice | null = null;
 
         if (speaker === "academic") {
           // Souad: female voice
           selectedVoice = findVoice(femaleKeywords);
           if (!selectedVoice) {
-            // fallback: pick the last voice in pool (often female or different)
+            // fallback: pick the last voice in pool (often different from default)
             selectedVoice = pool[pool.length - 1];
           }
         } else if (speaker === "technical") {
           // Malek: first male voice found
           selectedVoice = findVoice(maleKeywords);
           if (!selectedVoice) {
-            const nonFemale = getNonFemaleVoices();
-            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
+            selectedVoice = pool[0]; // first available
           }
         } else if (speaker === "business") {
-          // Amir: second distinct male voice
+          // Amir: second distinct male voice, different from Malek's
           const malekVoice = findVoice(maleKeywords);
           selectedVoice = findVoice(maleKeywords, malekVoice);
-          if (!selectedVoice && malekVoice) {
-            selectedVoice = malekVoice; // Reuse Malek if we only found 1 explicit male
-          }
-          
           if (!selectedVoice) {
-            // Last resort: we didn't find any explicit male voices.
-            // Malek got nonFemale[0], so give Amir nonFemale[1] if possible.
-            const nonFemale = getNonFemaleVoices();
-            if (nonFemale.length > 1) {
-              selectedVoice = nonFemale[1];
-            } else if (nonFemale.length > 0) {
-              selectedVoice = nonFemale[0];
-            } else {
-              selectedVoice = pool[0];
-            }
+            // If no second male voice, reuse Malek's male voice (better than a female voice)
+            selectedVoice = malekVoice;
+          }
+          if (!selectedVoice) {
+            // Last resort: pick any voice that does NOT match female keywords
+            const nonFemale = pool.filter(v => {
+              const name = v.name.toLowerCase();
+              return !femaleKeywords.some(kw => name.includes(kw));
+            });
+            selectedVoice = nonFemale.length > 0 ? nonFemale[0] : pool[0];
           }
         }
 
@@ -1409,6 +1397,28 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
             exit={{ opacity: 0, y: -20 }}
             className="w-full h-full px-4 md:px-6 py-3 flex items-start md:items-center justify-center relative overflow-y-auto"
           >
+            {/* Mobile Device Blocker */}
+            {isMobileDevice ? (
+              <div className="max-w-md w-full my-auto flex flex-col items-center text-center px-6">
+                <div className="w-20 h-20 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center mb-6 shadow-sm">
+                  <Monitor className="w-10 h-10 text-gray-900" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2 tracking-tight">
+                  {t('simulation.desktop_required')}
+                </h2>
+                <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                  {t('simulation.desktop_required_desc')}
+                </p>
+                <div className="w-full p-4 rounded-xl bg-gray-50 border border-gray-200">
+                  <div className="flex items-center justify-center gap-3 text-gray-600">
+                    <Chrome className="w-4 h-4 shrink-0 text-gray-900" />
+                    <span className="text-[11px] font-semibold uppercase tracking-wider">
+                      {t('simulation.chrome_optimized')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="max-w-3xl w-full my-auto">
               <div className="mb-3">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
@@ -1430,33 +1440,19 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {/* Left Column */}
                 <div className="flex flex-col h-full space-y-4">
-                  {/* Language Selection */}
+                  {/* Language — auto-detected from report */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">
                       {t('simulation.report_language')}
                     </label>
                     <div className="flex gap-3">
-                      {["french", "english"].map((lang) => {
-                        const isLoading = reportLanguage === null;
-                        const isDisabled = isLoading || reportLanguage !== lang;
-
-                        return (
-                        <button
-                          key={lang}
-                          disabled={isDisabled}
-                          onClick={() => setConfig({ ...config, language: lang as Language })}
-                          className={`flex-1 py-2.5 px-4 border rounded-xl transition-all text-sm font-medium shadow-sm ${
-                            isDisabled
-                              ? "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
-                              : config.language === lang
-                                ? "bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900"
-                                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                          }`}
-                        >
-                          {lang === 'french' ? t('simulation.lang_french') : t('simulation.lang_english')}
-                        </button>
-                      )})}
+                      <div className="flex-1 py-2.5 px-4 border rounded-xl text-sm font-medium shadow-sm bg-gray-900 text-white border-gray-900 ring-1 ring-gray-900 text-center">
+                        {config.language === 'french' ? t('simulation.lang_french') : t('simulation.lang_english')}
+                      </div>
                     </div>
+                    <p className="text-[10px] text-gray-400 mt-1.5 uppercase tracking-wider">
+                      {t('simulation.language_auto_detected') || 'Auto-detected from your report'}
+                    </p>
                   </div>
 
                   {/* Duration Selection */}
@@ -1582,63 +1578,51 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
               {/* Initialize Button */}
               <div className="mt-5 pt-4">
-                {isMobile ? (
-                  <div className="w-full bg-orange-50 border border-orange-200 text-orange-800 py-4 px-4 rounded-xl font-medium shadow-sm flex flex-col sm:flex-row items-center justify-center gap-3 text-sm text-center">
-                    <AlertTriangle className="w-5 h-5 shrink-0" />
-                    <span>
-                      {config.language === 'french' 
-                        ? "Les simulations ne sont pas supportées sur mobile. Veuillez utiliser un ordinateur." 
-                        : "Simulations are not supported on mobile devices. Please use a computer."}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => setShowConfirmModal(true)}
-                      disabled={isProcessing || !profile || profile.credits < currentCost}
-                      className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
-                    >
-                      <div className="flex items-center justify-center gap-3 relative z-10">
-                        {isProcessing ? (
-                          <div className="flex items-center gap-2">
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            <span>{t('common.loading')}</span>
-                          </div>
-                        ) : (
-                          <>
-                            <span className="text-lg">{t('simulation.start_simulation')}</span>
-                            <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
-                              {currentCost}
-                              <NextImage 
-                                src="/images/favicon.jpeg" 
-                                alt="Latexo" 
-                                width={14} 
-                                height={14} 
-                                className="rounded-full grayscale brightness-200"
-                              />
-                            </span>
-                          </>
-                        )}
+                <button
+                  onClick={() => setShowConfirmModal(true)}
+                  disabled={isProcessing || !profile || profile.credits < currentCost}
+                  className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-medium shadow-md hover:bg-gray-800 hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 group relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-center gap-3 relative z-10">
+                    {isProcessing ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>{t('common.loading')}</span>
                       </div>
-                    </button>
+                    ) : (
+                      <>
+                        <span className="text-lg">{t('simulation.start_simulation')}</span>
+                        <span className="flex items-center gap-1.5 bg-white/10 text-white px-3 py-1 text-xs font-semibold rounded-full shadow-inner group-hover:bg-white/20 transition-colors">
+                          {currentCost}
+                          <NextImage 
+                            src="/images/favicon.jpeg" 
+                            alt="Latexo" 
+                            width={14} 
+                            height={14} 
+                            className="rounded-full grayscale brightness-200"
+                          />
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </button>
 
-                    <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
-                      {profile && profile.credits >= currentCost ? (
-                        <div className="flex items-center gap-2">
-                          <span>{t('simulation.estimated_balance')}</span>
-                          <span className="text-black font-bold">{profile.credits - currentCost}</span>
-                          <span>{t('simulation.credits_remaining')}</span>
-                        </div>
-                      ) : profile ? (
-                        <p className="text-red-600 font-bold border-b border-red-600">
-                          {t('simulation.insufficient_credits', { credits: profile.credits })}
-                        </p>
-                      ) : null}
+                <div className="mt-4 flex items-center justify-center text-xs font-mono text-gray-500 uppercase tracking-widest">
+                  {profile && profile.credits >= currentCost ? (
+                    <div className="flex items-center gap-2">
+                       <span>{t('simulation.estimated_balance')}</span>
+                       <span className="text-black font-bold">{profile.credits - currentCost}</span>
+                       <span>{t('simulation.credits_remaining')}</span>
                     </div>
-                  </>
-                )}
+                  ) : profile ? (
+                    <p className="text-red-600 font-bold border-b border-red-600">
+                      {t('simulation.insufficient_credits', { credits: profile.credits })}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
+            )}
           </motion.div>
         )}
 

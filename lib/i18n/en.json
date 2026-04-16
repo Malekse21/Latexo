@@ -151,7 +151,10 @@
     "deliberation_3": "Assessing business viability...",
     "deliberation_4": "Calculating final grade...",
     "lang_french": "French",
-    "lang_english": "English"
+    "lang_english": "English",
+    "language_auto_detected": "Auto-detected from your report",
+    "desktop_required": "Desktop Required",
+    "desktop_required_desc": "The defense simulation requires an audio recorder and a complex interface. Please log in on a computer to start a session."
   },
   "upload": {
     "title": "Upload PDF Report",

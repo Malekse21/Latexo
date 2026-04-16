@@ -151,7 +151,10 @@
     "deliberation_3": "Évaluation de la viabilité business...",
     "deliberation_4": "Calcul de la note finale...",
     "lang_french": "Français",
-    "lang_english": "Anglais"
+    "lang_english": "Anglais",
+    "language_auto_detected": "Détectée automatiquement depuis votre rapport",
+    "desktop_required": "Ordinateur Requis",
+    "desktop_required_desc": "La simulation de soutenance requiert un enregistreur audio et une interface complexe. Veuillez vous connecter sur un ordinateur pour lancer une session."
   },
   "upload": {
     "title": "Télécharger le Rapport PDF",
