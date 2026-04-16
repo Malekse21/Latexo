@@ -1637,6 +1637,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                     </div>
                   </>
                 )}
+              </div>
             </div>
           </motion.div>
         )}
