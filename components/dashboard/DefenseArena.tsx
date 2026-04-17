@@ -48,7 +48,6 @@ const playSoundEffect = (type: 'pop' | 'click' | 'chime') => {
       oscillator.stop(audioCtx.currentTime + 0.5);
     }
   } catch (e) {
-    console.error("Audio Context not supported or failed", e);
   }
 };
 
@@ -221,7 +220,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       setMicStatus('success');
       setTimeout(() => setMicStatus('idle'), 3000);
     } catch (err) {
-      console.error("Mic error:", err);
       setMicStatus('error');
       setTimeout(() => setMicStatus('idle'), 3000);
     }
@@ -482,12 +480,12 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           const supabase = createClient();
           const { data } = await supabase
             .from('reports')
-            .select('name, language, detected_language')
+            .select('name, language')
             .eq('id', finalReportId)
             .single();
           if (data) {
             setReportName(data.name);
-            const lang = data.language || data.detected_language;
+            const lang = data.language;
             if (lang) {
               const isFrench = lang.toLowerCase().startsWith('fr');
               const mappedLang = isFrench ? 'french' : 'english';
@@ -677,7 +675,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        console.error("[Init] Initialize API Error:", errData);
         throw new Error(errData.error || `Simulation initialization failed (${response.status})`);
       }
 
@@ -695,7 +692,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
       if (!sessionRes.ok) {
         const errData = await sessionRes.json().catch(() => ({}));
-        console.error("[Init] Session Start Error:", errData);
         throw new Error(errData.error || `Session creation failed (${sessionRes.status})`);
       }
 
@@ -708,10 +704,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       });
       refreshProfile().then(() => {
       }).catch((err) => {
-        console.error('[Init] Failed to refresh profile:', err);
       });
     } catch (error) {
-      console.error("[Init] Failed to initialize simulation:", error);
       if (error instanceof Error && error.message.includes("No active report")) {
         setAlertModal({ isOpen: true, type: 'no-report' });
       } else {
@@ -826,7 +820,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       };
       
       utterance.onerror = (e) => {
-        console.error("SpeechSynthesis error:", e);
         clearTimeout(safetyTimer);
         finish();
       };
@@ -858,7 +851,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       oscillator.start();
       setTimeout(() => oscillator.stop(), durationMs);
     } catch (e) {
-      console.error("Audio Context not supported or failed", e);
     }
   };
 
@@ -938,7 +930,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("[Eval] API Error:", response.status, errorText);
         throw new Error(`Evaluation failed: ${response.status} ${errorText}`);
       }
 
@@ -950,7 +941,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       setEvaluationResults(data);
       setPhase("aftermath");
     } catch (error) {
-      console.error("[Eval] Failed to evaluate simulation:", error);
       setAlertModal({ 
         isOpen: true, 
         type: 'error', 
@@ -1111,7 +1101,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       }, thinkingDelay);
       
     } catch (error) {
-      console.error('Failed to get AI response:', error);
       alert('Failed to get jury response. Please try again.');
       setIsAISpeaking(false);
       setActiveSpeaker(null);
@@ -1187,7 +1176,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         };
 
         mediaRecorder.onerror = (event: any) => {
-          console.error("MediaRecorder error:", event.error || event);
           setIsRecording(false);
           setActiveSpeaker(null);
           // Clean up stream
@@ -1245,7 +1233,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
                  : "No speech detected. Please try again.");
             }
           } catch (error) {
-            console.error("Transcription error:", error);
             setLiveCaption(config.language === 'french'
               ? "Échec de la transcription. Veuillez réessayer."
               : "Transcription failed. Please try again.");
@@ -1264,7 +1251,6 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
         // and some (iOS Safari) may fire it with an empty blob if interrupted
         mediaRecorder.start(1000);
       } catch (error: any) {
-        console.error("❌ Failed to start recording:", error);
         
         if (error.name === "NotReadableError") {
            alert(config.language === 'french'
