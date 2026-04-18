@@ -135,6 +135,20 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
     duration: 15,
     difficulty: "standard",
   });
+
+  // Adjust default duration if user doesn't have enough credits for 15 mins
+  const hasAdjustedDurationRef = useRef(false);
+  useEffect(() => {
+    if (profile && phase === "config" && !hasAdjustedDurationRef.current) {
+      hasAdjustedDurationRef.current = true;
+      if (profile.credits < 20) {
+        setConfig(prev => ({ ...prev, duration: 5 }));
+      } else {
+        setConfig(prev => ({ ...prev, duration: 15 }));
+      }
+    }
+  }, [profile, phase]);
+
   const [alertModal, setAlertModal] = useState<AlertModalState>({ isOpen: false, type: 'error' });
   const [loadingMessage, setLoadingMessage] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
@@ -368,6 +382,7 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
 
     isClosingRef.current = false;
     isEvaluatingRef.current = false;
+    hasAdjustedDurationRef.current = false;
     setPhase("config");
     setMessages([]);
     setTranscript(t('common.loading'));
