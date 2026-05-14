@@ -78,11 +78,26 @@ function detectLanguage(text: string): "french" | "english" {
   return frenchCount >= englishCount ? "french" : "english";
 }
 
+// ── Request body type ────────────────────────────────────────
+interface UploadRequestBody {
+  filePath: string;
+  thumbnailUrl: string | null;
+  fileName: string;
+  fileSize: number;
+  pageCount: number;
+  wordCount: number;
+  extractedText: string;
+  fileType: 'pdf' | 'docx';
+  confirmDeletion: boolean;
+}
+
 // ── API Route ────────────────────────────────────────────────
-// Hybrid approach:
-//   - The client extracts text + thumbnail in-browser (no server-side pdfjs/mammoth)
-//   - The client sends the file binary + extracted text via FormData
-//   - This API handles: storage upload, text cleaning, language detection, DB write
+// Lightweight metadata-only route:
+//   - The client uploads PDF/DOCX + thumbnail directly to Supabase Storage
+//     (secured by RLS policies restricting writes to user's own folder)
+//   - The client extracts text in-browser (no server-side pdfjs/mammoth)
+//   - This API handles: validation, text cleaning, language detection,
+//     old file cleanup (on update), and DB write
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,27 +117,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Payload Size Limit: Reject payloads larger than 10MB
-    const contentLength = request.headers.get('content-length');
-    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: 'Payload too large. Maximum upload size is 10MB.' },
-        { status: 413 }
-      );
+    // Parse JSON body (lightweight — no file binary)
+    const body: UploadRequestBody = await request.json();
+    const {
+      filePath,
+      thumbnailUrl,
+      fileName,
+      fileSize,
+      pageCount,
+      wordCount,
+      extractedText,
+      confirmDeletion,
+    } = body;
+
+    if (!filePath || !fileName) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const thumbnail = formData.get('thumbnail') as File | null;
-    const confirmDeletion = formData.get('confirmDeletion') === 'true';
-
-    // Pre-extracted text from the client (no more server-side PDF parsing!)
-    const extractedText = (formData.get('extractedText') as string) || '';
-    const pageCount = parseInt(formData.get('pageCount') as string || '0', 10);
-    const wordCount = parseInt(formData.get('wordCount') as string || '0', 10);
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    // Verify the uploaded file belongs to this user (security check)
+    if (!filePath.startsWith(`${user.id}/`)) {
+      return NextResponse.json({ error: 'Invalid file path' }, { status: 403 });
     }
 
     // ── Handle One-Report Policy Updates ──
@@ -164,51 +178,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Upload PDF/DOCX to Storage ──
-    const timestamp = Date.now();
-    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const filePath = `${user.id}/${timestamp}_${safeName}`;
-
-    const { error: pdfUploadError } = await supabase.storage
-      .from('pfes')
-      .upload(filePath, file, {
-        upsert: true,
-        contentType: 'application/octet-stream',
-      });
-
-    if (pdfUploadError) {
-      throw new Error(`PDF Storage Upload failed: ${pdfUploadError.message}`);
-    }
-
-    // ── Upload Thumbnail ──
-    let thumbnailUrl: string | null = null;
-    if (thumbnail) {
-      const thumbnailPath = `${user.id}/${timestamp}_${safeName.replace(/\.(pdf|docx)$/i, '')}_thumb.png`;
-      const { error: thumbUploadError } = await supabase.storage
-        .from('thumbnails')
-        .upload(thumbnailPath, thumbnail, {
-          upsert: true,
-          contentType: 'image/png',
-        });
-
-      if (!thumbUploadError) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('thumbnails')
-          .getPublicUrl(thumbnailPath);
-        thumbnailUrl = publicUrl;
-      } else {
-        console.error('Thumbnail upload error:', thumbUploadError);
-      }
-    }
-
     // ── Clean text + Detect language (using client-provided text) ──
-    const cleanedText = cleanBoilerplate(extractedText).trim();
-    const detectedLang = detectLanguage(extractedText);
+    const cleanedText = cleanBoilerplate(extractedText || '').trim();
+    const detectedLang = detectLanguage(extractedText || '');
 
-    console.log(`Received ${extractedText.length} chars for ${file.name}. Language: ${detectedLang}`);
+    console.log(`Received ${(extractedText || '').length} chars for ${fileName}. Language: ${detectedLang}`);
 
     // ── Save to Database ──
-    const cleanTitle = file.name
+    const cleanTitle = fileName
       .replace(/\.(pdf|docx)$/i, '')
       .replace(/_/g, ' ')
       .replace(/-/g, ' ');
@@ -219,9 +196,9 @@ export async function POST(request: NextRequest) {
       name: cleanTitle,
       file_path: filePath,
       thumbnail_url: thumbnailUrl,
-      page_count: pageCount,
-      word_count: wordCount,
-      size_bytes: file.size,
+      page_count: pageCount || 0,
+      word_count: wordCount || 0,
+      size_bytes: fileSize || 0,
       status: 'completed',
       data: {},
       detected_language: detectedLang,

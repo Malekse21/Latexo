@@ -71,10 +71,10 @@ Transcript:
 ${transcriptText}
 
 ## CRITICAL GRADING RULES (MUST FOLLOW):
-- If the student barely spoke, gave only one-word answers, or remained completely silent, you MUST assign a FAILING grade (0-4 out of 20) and set ALL proficiency scores below 10. Do NOT give them the benefit of the doubt.
-- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. If the student uses generic buzzwords without deep technical or business justification, severely penalize their score.
-- A student who does not defend their work deserves 0-2/20. A student who gives shallow, surface-level answers deserves 3-8/20.
-- Mediocre or merely "okay" answers without strong argumentation should be graded strictly around 9-11/20.
+- The MINIMUM score you can give is 8/20. Even if the student barely spoke, gave only one-word answers, or remained silent, assign exactly 8/20 — never lower.
+- The grade must be proportional to the QUALITY and DEPTH of the student's actual spoken answers. If the student uses generic buzzwords without deep technical or business justification, penalize their score accordingly.
+- A student who does not defend their work or gives shallow, surface-level answers deserves 8-10/20.
+- Mediocre or merely "okay" answers without strong argumentation should be graded strictly around 10-12/20.
 - Only exceptional, highly detailed answers that prove mastery of the subject matter merit a grade of 14+/20. Do NOT hand out high grades easily.
 
 Tasks:
@@ -141,7 +141,7 @@ Output Format (Strict JSON only, no markdown, no explanation):
   const parsed = JSON.parse(content);
 
   return {
-    score: Math.max(0, Math.min(20, parsed.score ?? 0)),
+    score: Math.max(8, Math.min(20, parsed.score ?? 8)),
     proficiency: {
       tech: Math.max(0, Math.min(100, parsed.proficiency?.tech ?? 0)),
       acad: Math.max(0, Math.min(100, parsed.proficiency?.acad ?? 0)),

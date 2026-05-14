@@ -413,7 +413,64 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       ambianceRef.current.pause();
       ambianceRef.current = null;
     }
+    // Clear persisted session state
+    try { sessionStorage.removeItem('latexo_simulation_state'); } catch {}
   };
+
+  // ─── Session Persistence: Save state to sessionStorage ───────────────────────
+  useEffect(() => {
+    if (phase !== 'arena') return;
+    try {
+      const snapshot = {
+        phase,
+        config,
+        messages,
+        sessionStartTime,
+        initialData,
+        reportId: reportId || profile?.active_report_id || null,
+      };
+      sessionStorage.setItem('latexo_simulation_state', JSON.stringify(snapshot));
+    } catch {}
+  }, [phase, config, messages, sessionStartTime, initialData]);
+
+  // ─── Session Persistence: Hydrate state from sessionStorage on mount ─────────
+  const hasHydratedRef = useRef(false);
+  useEffect(() => {
+    if (hasHydratedRef.current) return;
+    hasHydratedRef.current = true;
+    try {
+      const raw = sessionStorage.getItem('latexo_simulation_state');
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved || saved.phase !== 'arena' || !saved.sessionStartTime) return;
+
+      // Recalculate remaining time dynamically
+      const elapsedSeconds = Math.floor((Date.now() - saved.sessionStartTime) / 1000);
+      const totalSeconds = (saved.config?.duration || 15) * 60;
+      const remaining = totalSeconds - elapsedSeconds;
+
+      if (remaining <= 0) {
+        // Session has expired while page was closed — clean up
+        sessionStorage.removeItem('latexo_simulation_state');
+        return;
+      }
+
+      // Restore state
+      setConfig(saved.config);
+      setMessages(saved.messages || []);
+      setSessionStartTime(saved.sessionStartTime);
+      setTimeRemaining(remaining);
+      setPhase('arena');
+      setTranscript(
+        saved.config?.language === 'french'
+          ? 'Session restaurée. Continuez votre défense.'
+          : 'Session restored. Continue your defense.'
+      );
+    } catch {
+      // Corrupted state — clear it
+      try { sessionStorage.removeItem('latexo_simulation_state'); } catch {}
+    }
+  }, []);
 
   // Detect browser on mount
   useEffect(() => {
@@ -876,6 +933,8 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       return;
     }
     isClosingRef.current = true;
+    // Clear persisted session so refresh doesn't restore an ending session
+    try { sessionStorage.removeItem('latexo_simulation_state'); } catch {}
     // Stop any active audio
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     // Kill any active typewriter interval so it can't overwrite the closing text
@@ -963,7 +1022,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
           ? "\u00c9chec du traitement des r\u00e9sultats. Veuillez r\u00e9essayer."
           : "Failed to process simulation results. Please try again." 
       });
-      resetSimulation();
+      // Inline reset to prevent calling a potentially undefined function
+      setMessages([]);
+      setPhase("config");
+      setIsRecording(false);
+      try { sessionStorage.removeItem('latexo_simulation_state'); } catch {}
     } finally {
       setIsEvaluating(false);
     }
@@ -985,7 +1048,11 @@ export function DefenseArena({ reportId, initialLanguage }: DefenseArenaProps = 
       alert(config.language === 'french' 
         ? "Aucune conversation enregistrée. Veuillez réessayer."
         : "No conversation recorded. Please try again.");
-      resetSimulation();
+      // Inline reset to prevent reload loop from corrupted state
+      setMessages([]);
+      setPhase("config");
+      setIsRecording(false);
+      try { sessionStorage.removeItem('latexo_simulation_state'); } catch {}
       return;
     }
     setShowEndConfirmModal(true);

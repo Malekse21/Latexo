@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/context/user-context";
+import { createClient } from "@/lib/supabase/client";
 import {
   analyzeFile,
   FileValidationError,
@@ -129,10 +130,11 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
   };
 
   // ── Core Pipeline ───────────────────────────────────────
-  // Hybrid approach:
+  // Architecture:
   //   Step 1-2: Client-side validation + text extraction (fast, no server load)
-  //   Step 3-4: Send file + extracted text to API route via FormData
-  //             (API handles storage upload with server-side Supabase client)
+  //   Step 3:   Upload PDF + thumbnail directly to Supabase Storage from browser
+  //             (RLS policies ensure users can only write to their own folder)
+  //   Step 4:   Send lightweight JSON metadata to API route for DB operations
   const processAndUpload = async (
     file: File,
     confirmDeletion: boolean = false
@@ -157,44 +159,98 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
 
       const analysis = await analyzeFile(file);
 
-      // ▸ Step 3: Upload file + metadata to the API route
-      //   The server handles Supabase Storage (it has the right credentials)
+      // ▸ Step 3: Upload file directly to Supabase Storage from browser
+      //   RLS policies restrict users to their own folder (user_id/*)
       setUploadStatus({
         status: "processing",
         currentStep: 2,
         message: t("upload.step_uploading") || "Uploading PDF...",
       });
 
-      const formData = new FormData();
-      formData.append("file", file);
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Session expired. Please log in again.");
+
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const filePath = `${user.id}/${timestamp}_${safeName}`;
+
+      // Upload PDF/DOCX binary directly to storage (bypasses Vercel body limit)
+      const { error: storageError } = await supabase.storage
+        .from("pfes")
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type || "application/octet-stream",
+        });
+
+      if (storageError) {
+        console.error("Storage upload error:", storageError);
+        throw new Error(`File upload failed: ${storageError.message}`);
+      }
+
+      // Upload thumbnail if available
+      let thumbnailUrl: string | null = null;
       if (analysis.thumbnail) {
-        formData.append("thumbnail", analysis.thumbnail, "thumbnail.png");
-      }
-      formData.append("pageCount", analysis.pageCount.toString());
-      formData.append("wordCount", analysis.wordCount.toString());
-      formData.append("extractedText", analysis.extractedText);
-      formData.append("fileType", analysis.fileType);
-      if (confirmDeletion) {
-        formData.append("confirmDeletion", "true");
-      }
+        const thumbPath = `${user.id}/${timestamp}_${safeName.replace(/\.(pdf|docx)$/i, "")}_thumb.png`;
+        const { error: thumbError } = await supabase.storage
+          .from("thumbnails")
+          .upload(thumbPath, analysis.thumbnail, {
+            upsert: true,
+            contentType: "image/png",
+          });
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Upload failed");
+        if (!thumbError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from("thumbnails")
+            .getPublicUrl(thumbPath);
+          thumbnailUrl = publicUrl;
+        } else {
+          console.error("Thumbnail upload error:", thumbError);
+        }
       }
 
-      // ▸ Step 4: Done (the API handled storage + DB in one shot)
+      // ▸ Step 4: Send lightweight metadata to API for DB operations
       setUploadStatus({
         status: "processing",
         currentStep: 3,
         message: t("upload.msg_finalizing") || "Finalizing...",
       });
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filePath,
+          thumbnailUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          pageCount: analysis.pageCount,
+          wordCount: analysis.wordCount,
+          extractedText: analysis.extractedText,
+          fileType: analysis.fileType,
+          confirmDeletion,
+        }),
+      });
+
+      let data;
+      const respContentType = response.headers.get("content-type");
+      const text = await response.text();
+
+      if (respContentType && respContentType.includes("application/json")) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.error("Failed to parse JSON upload response:", text);
+          throw new Error(`Server error (${response.status}). Please try again.`);
+        }
+      } else {
+        console.error("Non-JSON upload response:", text);
+        throw new Error(`Server error (${response.status}). Please try again.`);
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || `Upload failed (${response.status})`);
+      }
 
       // Brief pause to show the last step
       await new Promise((r) => setTimeout(r, 400));
