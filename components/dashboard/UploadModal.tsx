@@ -12,6 +12,7 @@ import {
   ScanSearch,
   CloudUpload,
   DatabaseZap,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/context/user-context";
@@ -330,6 +331,7 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                 <div className="p-6">
                   {/* Idle — Drop zone */}
                   {uploadStatus.status === "idle" && !showConfirmation && (
+                    <>
                     <div
                       onDragOver={handleDragOver}
                       onDragLeave={handleDragLeave}
@@ -358,6 +360,11 @@ export function UploadModal({ isOpen, onClose, onComplete }: UploadModalProps) {
                         className="hidden"
                       />
                     </div>
+                    <div className="flex items-center justify-center gap-2 mt-3 text-xs text-gray-400">
+                      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                      <span>{t("upload.privacy_notice") || "Your file is private and will never be shared or indexed by plagiarism tools."}</span>
+                    </div>
+                    </>
                   )}
 
                   {/* Confirmation — update existing report */}

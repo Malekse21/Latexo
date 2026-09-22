@@ -178,7 +178,8 @@
     "update_desc_1": "Uploading a new report will update your current file and text extraction.",
     "update_desc_2": "Your existing simulations, streak, and history will be preserved.",
     "cancel": "Cancel",
-    "confirm_update": "Yes, Update Report"
+    "confirm_update": "Yes, Update Report",
+    "privacy_notice": "Your file is private and will never be shared or indexed by plagiarism tools."
   },
   "leaderboard": {
     "title": "LEADERBOARD",

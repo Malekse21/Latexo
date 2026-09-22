@@ -178,7 +178,8 @@
     "update_desc_1": "Le téléchargement d'un nouveau rapport mettra à jour votre fichier actuel et son extraction.",
     "update_desc_2": "Vos simulations, votre série et votre historique existant seront préservés.",
     "cancel": "Annuler",
-    "confirm_update": "Oui, Mettre à jour"
+    "confirm_update": "Oui, Mettre à jour",
+    "privacy_notice": "Votre fichier est privé et ne sera jamais partagé ni indexé par les outils anti-plagiat."
   },
   "leaderboard": {
     "title": "CLASSEMENT",

@@ -24,14 +24,24 @@
 .DS_Store
 *.pem
 
-# debug
+# debug & logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
+build_log.txt
+build_output.log
 
-# env files (can opt-in for committing if needed)
+# debug scripts
+DEBUG_UPLOAD.js
+
+# sensitive data & user exports
+*.csv
+
+# env files
 .env*
+!.env.example
 
 # vercel
 .vercel

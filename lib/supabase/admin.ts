@@ -6,9 +6,12 @@ import { createClient } from '@supabase/supabase-js';
  * Does not use cookies or maintain a session.
  */
 export async function createAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || 'placeholder';
+
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)!,
+    url,
+    key,
     {
       auth: {
         autoRefreshToken: false,
